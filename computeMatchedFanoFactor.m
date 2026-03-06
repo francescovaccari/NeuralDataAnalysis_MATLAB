@@ -36,6 +36,13 @@
 %   [FF, FF_SE] = computeMatchedFanoFactor(meanA, meanB, varA, varB, 100);
 %   FF_mean = mean(FF);  % Average Fano Factor across iterations
 %
+%   References
+%   ----------
+%   Churchland, M., Yu, B., Cunningham, J. et al. (2010)
+%   Stimulus onset quenches neural variability: a widespread cortical phenomenon. 
+%   Nat Neurosci 13, 369–378. 
+%   https://doi.org/10.1038/nn.2501
+%
 %   Please cite
 %   -----------
 %     Hadjidimitrakis, K., Vaccari, F. E., De Vitis, M., Filippini, M., Diomedi, S., & Fattori, P. (2026).
@@ -75,5 +82,6 @@ function [FF, FF_SE] = computeMatchedFanoFactor(meanA, meanB, varA, varB, num_re
         FF_SE(i, 2) = mdl_B.Coefficients.SE(2);
 
     end
+
 
 end
