@@ -35,11 +35,6 @@ function gazeStats = analyzeGazeData(version, elevation, varargin)
 %   structure contains detailed metrics for each event including duration,
 %   amplitude, mean velocity, and peak velocity.
 %
-%   References
-%   ----------
-%   Hadjidimitrakis, K., Vaccari, F. E., De Vitis, M., Filippini, M., Diomedi, S., & Fattori, P. (2026).
-%   Spontaneous oculomotor behavior sharpens eye position signals in parietal cortex.
-%   Journal of Neuroscience (submitted).
 %
 %   Please cite
 %   -----------
@@ -172,5 +167,6 @@ function gazeStats = analyzeGazeData(version, elevation, varargin)
 
     gazeStats.dataInfo.timeSeriesDuration = ...
         length(velocityDegSec) * binDuration;
+
 
 end
