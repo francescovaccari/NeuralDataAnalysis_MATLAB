@@ -1,5 +1,4 @@
 # NeuralDataAnalysis_MATLAB
-# MATLAB Functions Repository
 
 This repository collects MATLAB functions developed for published papers and for future research work, with the goal of maintaining a single, organized, and reusable codebase.
 
