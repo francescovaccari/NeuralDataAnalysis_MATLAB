@@ -1,13 +1,14 @@
 clear all;
 close all;
 
-
-filenameSpikes = "Z:\MEF29\Dati_neurali\DATI_PROCESSATI\DAT\DATI\FRA_TouchScreen\2026-05-05_13-29-17_MEF29_ID2020\Record Node 101\experiment1\recording1\continuous\Acquisition_Board-100.acquisition_board\continuous\DAT\chs128_192_ave_bpass300_6.0k_Int16_unsorted.mat";
-filenameEvents = "Z:\MEF29\Dati_neurali\RAW\DATI\FRA_TouchScreen\CSV\Other\ID2020_data.csv";
+dataFolder = 'C:\Users\frada\Desktop\WORK in PROGRESS\LAB\TouchScreen_project\Data\Datasets\';
+filenameSpikes = [dataFolder 'ID2055_chs0_128_ave_bpass300_6.0k_Int16_r_4_unsorted.mat'];
+filenameEvents = [dataFolder 'ID2055_data.csv'];
+filenameCSMS = [dataFolder 'ID2055_CSMS_chs0_128_ave_bpass300_6.0k_Int16_r_4_unsorted.mat'];
 
 eventType = "per_frame_events";
 
-stateSeqs = [0 100];%; 0 99];
+stateSeqs = [0 100];% 0 99];
 matchOpt = "first&last";
 
 otherMarkers = [1 4 5 6 7 8 9 10];
@@ -24,3 +25,6 @@ TC = recordedData.TC;
 TCTS = recordedData.TCTS;
 TRIAL_OUTCOME = recordedData.TRIAL_OUTCOME;
 
+save (filenameCSMS,...
+    "-v7.3", ...
+    "CS", "MS", "TC", "TCTS", "TRIAL_OUTCOME")    ;
