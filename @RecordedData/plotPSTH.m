@@ -1,8 +1,9 @@
-function plotPSTH(obj, neu2consider, conds2consider, window, bin, vars2plot)
+function plotPSTH(obj, neu2consider, conds2consider, window, bin, vars2plot, varargin)
     % PLOTPSTH - Plot peri-stimulus time histogram with raster and optional variables
     %
     % SYNTAX:
     %   plotPSTH(obj, neu2consider, conds2consider, window, bin, vars2plot)
+    %   plotPSTH(..., 'markerNames', markerNames)
     %
     % INPUTS:
     %   obj                 - RecordedData object                     
@@ -11,6 +12,7 @@ function plotPSTH(obj, neu2consider, conds2consider, window, bin, vars2plot)
     %   window              - [onset, marker, offset] in seconds (numeric vector, length 3)
     %   bin                 - Bin size in seconds (numeric scalar, positive)
     %   vars2plot           - Cell array of variable names {'EY', 'TC', ...} or empty {}
+    %   'markerNames'       - Cell array of marker names used for the raster marker legend
     %
     %
     % OUTPUT:
@@ -39,6 +41,26 @@ function plotPSTH(obj, neu2consider, conds2consider, window, bin, vars2plot)
     
     if nargin < 6 || isempty(vars2plot)
         vars2plot = {};
+    elseif (ischar(vars2plot) || (isstring(vars2plot) && isscalar(vars2plot))) && ...
+            strcmpi(char(vars2plot), 'markerNames')
+        varargin = [{vars2plot}, varargin];
+        vars2plot = {};
+    elseif ischar(vars2plot) || isstring(vars2plot)
+        vars2plot = cellstr(vars2plot);
+    end
+
+    p = inputParser;
+    validMarkerNames = @(names) isempty(names) || ...
+        (iscell(names) && all(cellfun(@(name) ischar(name) || ...
+        (isstring(name) && isscalar(name)), names(:))));
+    addParameter(p, 'markerNames', {}, validMarkerNames);
+    parse(p, varargin{:});
+
+    markerNames = p.Results.markerNames;
+    if isempty(markerNames)
+        markerNames = {};
+    else
+        markerNames = cellfun(@char, markerNames(:)', 'UniformOutput', false);
     end
 
     % Get number of conditions
@@ -61,6 +83,48 @@ function plotPSTH(obj, neu2consider, conds2consider, window, bin, vars2plot)
     % Exctract CS and MS from obj
     CS = obj.CS;
     MS = obj.MS;
+
+    plottedMarkerMask = false(1, 0);
+    for condIdx = 1:nConds
+        cond = conds2consider(condIdx);
+        nTrials = numel(CS{neu2consider, cond});
+
+        for trial = 1:nTrials
+            markers = MS{neu2consider, cond}{trial};
+            alignedMarkers = markers - markers(window(2));
+            markerIsInWindow = alignedMarkers >= window(1) & alignedMarkers <= window(3);
+
+            if numel(plottedMarkerMask) < numel(markerIsInWindow)
+                plottedMarkerMask(numel(markerIsInWindow)) = false;
+            end
+
+            plottedMarkerMask(1:numel(markerIsInWindow)) = ...
+                plottedMarkerMask(1:numel(markerIsInWindow)) | markerIsInWindow(:)';
+        end
+    end
+
+    plottedMarkerIdx = find(plottedMarkerMask);
+    nPlottedMarkers = numel(plottedMarkerIdx);
+    markerColors = prism(max(nPlottedMarkers, 1));
+    markerColors = markerColors(1:nPlottedMarkers, :);
+    markerColorByIdx = nan(numel(plottedMarkerMask), 3);
+    if nPlottedMarkers > 0
+        markerColorByIdx(plottedMarkerIdx, :) = markerColors;
+    end
+
+    markerLegendLabels = {};
+    if ~isempty(markerNames) && nPlottedMarkers > 0
+        if numel(markerNames) == nPlottedMarkers
+            markerLegendLabels = markerNames;
+        elseif numel(markerNames) >= max(plottedMarkerIdx)
+            markerLegendLabels = markerNames(plottedMarkerIdx);
+        else
+            error('RecordedData:InvalidMarkerNames', ...
+                ['markerNames must contain either one name for each plotted marker ' ...
+                '(%d names) or one name for each original marker index up to %d.'], ...
+                nPlottedMarkers, max(plottedMarkerIdx));
+        end
+    end
 
     % Create edges for histogram binning
     edges = window(1):bin:window(3);
@@ -166,9 +230,6 @@ function plotPSTH(obj, neu2consider, conds2consider, window, bin, vars2plot)
         
         markerSize = max(5, min(5, 17 / sqrt(nTrials * nConds)));
         
-        % Generate HSV colormap for markers
-        hsvColors = hsv(size(MS{neu2consider, conds2consider(1)}{1}, 2));
-        
         for trial = 1:nTrials
             markers = MS{neu2consider, cond}{trial};
             spikes = CS{neu2consider, cond}{trial};
@@ -188,13 +249,30 @@ function plotPSTH(obj, neu2consider, conds2consider, window, bin, vars2plot)
             for m = 1:numel(alignedMarkers)
                 markerTime = alignedMarkers(m);
                 if markerTime >= window(1) && markerTime <= window(3)
-                    colorIdx = mod(m - 1, size(hsvColors, 1)) + 1;
+                    markerColor = markerColorByIdx(m, :);
                     plot(ax_raster, markerTime, trial, 'o', ...
-                         'MarkerFaceColor', hsvColors(colorIdx, :), ...
-                         'MarkerEdgeColor', hsvColors(colorIdx, :), ...
-                         'MarkerSize', markerSize);
+                         'MarkerFaceColor', markerColor, ...
+                         'MarkerEdgeColor', markerColor, ...
+                         'MarkerSize', markerSize, ...
+                         'HandleVisibility', 'off');
                 end
             end
+        end
+
+        if condIdx == 1 && ~isempty(markerLegendLabels)
+            markerLegendHandles = gobjects(1, nPlottedMarkers);
+            for markerIdx = 1:nPlottedMarkers
+                markerLegendHandles(markerIdx) = plot(ax_raster, nan, nan, 'o', ...
+                    'MarkerFaceColor', markerColors(markerIdx, :), ...
+                    'MarkerEdgeColor', markerColors(markerIdx, :), ...
+                    'MarkerSize', markerSize, ...
+                    'LineStyle', 'none', ...
+                    'DisplayName', markerLegendLabels{markerIdx});
+            end
+            legend(ax_raster, markerLegendHandles, markerLegendLabels, ...
+                'Location', 'bestoutside', ...
+                'Interpreter', 'none', ...
+                'AutoUpdate', 'off');
         end
         
         ax_raster.YDir = 'reverse';

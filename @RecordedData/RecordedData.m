@@ -31,17 +31,26 @@ classdef RecordedData
         TensorWithVariableBinInfo = struct();      % Metadata for variable-bin tensor
         TensorWithVariableBin = [];                % Trial-by-trial activity (neurons × conditions × trials × time)
         TensorWithVariableBinCondAvg = [];         % Condition-averaged activity (neurons × conditions × time)
-        MarkerTensorForVariableBin = [];           % State marker times in variable bins
+        MarkerTensorForVariableBin = [];           % Marker times trial-by-trial (neurons × conditions × trials × marker)
+        MarkerTensorForVariableBinCondAvg = [];    % Marker times condition averaged (neurons × conditions × marker)
+        TrialNumWithVariableBin = [];              % Trial counts for variable-bin pipeline (neurons × conditions)
 
         % Fixed-bin tensors
         TensorWithFixBinInfo = struct();           % Metadata for fixed-bin tensor
         TensorWithFixBin = [];                     % Trial-by-trial activity (neurons × conditions × trials × time)
         TensorWithFixBinCondAvg = [];              % Condition-averaged activity (neurons × conditions × time)
-        MarkerTensorForFixBin = [];                % State marker times in fixed bins
+        MarkerTensorForFixBin = [];                % Marker times trial-by-trial (neurons × conditions × trials × marker)
+        MarkerTensorForFixBinCondAvg = [];         % Marker times condition averaged (neurons × conditions × marker)
+        TrialNumWithFixBin = [];                   % Trial counts for fixed-bin pipeline (neurons × conditions)
 
-        % dPCA tensor
-        Tensor4dPCAInfo = struct();     % Metadata for dPCA tensor
-        Tensor4dPCA = [];               % Multi-dimensional tensor for dPCA analysis
+        % Parameter-split tensor
+        TensorWithParamsInfo = struct();         % Metadata for parameter-split tensor
+        TensorWithParams = [];                   % Trial-by-trial activity (neurons × param1 x param2 x ... × trials × time)
+        TensorWithParamsCondAvg = [];            % Condition-averaged tensor (neurons × param1 x param2 x ... × time)
+        MarkerTensorForParams = [];              % State marker times in parameter-split tensor
+        TrialNumWithParams = [];                 % Trial counts (neurons × param1 × param2 × ...)
+     
+        
     end
 
     %% ===== PUBLIC METHODS =====
@@ -58,29 +67,40 @@ classdef RecordedData
             % See also: loadData, makeCSMS
         end
 
+        %% UTILITY METHODS
+        obj = mergeConditionsCSMS(obj, cond2merge)
+
         %% TENSOR PREPARATION METHODS
-        obj = prepareTensorWithVariableBin(obj, window, expectedBinWidth, smoothGaussianStdInBin)
+        obj = prepareTensorWithVariableBin(obj, window, expectedBinWidth, neus2consider, conds2consider)
         
-        obj = prepareTensorWithFixBin(obj, window, binWidth, smoothGaussianStdInBin)
+        obj = prepareTensorWithFixBin(obj, window, binWidth, neus2consider, conds2consider)
+
+        obj = splitTensorWithParams(obj, params, fixedBinFlag)
+
+        %% DATA REFINEMENT METHODS
+        obj = refineNeuralData(obj, refType, refOpt, fixedFlag)
         
         %% VISUALIZATION METHODS
-        plotPSTH(obj, neu2consider, conds2consider, window, bin, vars2plot)
+        plotPSTH(obj, neu2consider, conds2consider, window, bin, vars2plot, varargin)
         
-        plotSDF(obj, neus2consider, conds2consider, order, displayErrorFactor)
+        plotSDF(obj, neus2consider, conds2consider, window, binWidth, order, displayErrorFactor, varargin)
 
         %% DECODING AND ANALYSIS METHODS
         decodingScores = decodeCond(obj, neus2consider, conds2consider, window)
 
-        %% computeContAnova
-        anovaResults = computeContAnova(obj, neus2consider, conds2consider, refWindow, anaWindow, binWidth)
+        %% computeAnovaOnCond
+        anovaResults = computeAnovaOnCond(obj, neus2consider, conds2consider, refWindow, anaWindow, binWidth, varargin)
 
+        %% computeAnovaOnParam
+        anovaResults = computeAnovaOnParam(obj, neus2consider, conds2consider, params, refWindow, anaWindow, binWidth, varargin)
+
+        %% decodeClassification
+        % [decodingScores, Xtrain, labelsTrain, Xtest, labelsTest, mdl, predictedLabelsTrain, predictedLabelsTest, trainCVResults, testResults] = decodeClassification(obj, neus2consider, binWidth, conds2consider4train, trainParams, trainWindow, conds2consider4test, testParams, testWindow, varargin)
+        [neuralDecodingScores, neuralDecodingData, neuralDecodingModels] = neuralDecodingClassification(obj, neus2consider, binWidth, conds2consider4train, trainParams, trainWindow, conds2consider4test, testParams, testWindow, varargin)
+       
         %% dPCA ANALYSIS METHODS
-        obj = prepareTensor4dPCA(obj, paramNames, conditions, fixedBinFlag, neus2consider, conds2consider)
+        [dPCAmodel, dPCAprojTrain, dPCAprojTest] = computedPCA(obj, dPCAOpt, processingOpt, trainOpt, testOpt, visOpt)
 
-        dPCAResults = computedPCA(obj, combinedParams, numComps, options)
-
-        %% UTILITY METHODS
-        obj = mergeConditionsCSMS(obj, cond2merge)
     end
 
     %% ===== STATIC METHODS (CLASS CONSTRUCTION) =====

@@ -1,11 +1,12 @@
-function obj = prepareTensorWithFixBin(obj, window, binWidth, smoothGaussianStdInBin)
+function obj = prepareTensorWithFixBin(obj, window, binWidth, neus2consider, conds2consider)
     % PREPARETENSORWITHFIXBIN - Prepare tensor with fixed-width binning
     %
     % INPUTS:
     %   obj                     - RecordedData object
     %   window                  - [start(s), alignment_marker, end(s)] (numeric vector, length 3)
     %   binWidth                - [bin_width, overlap] in seconds (numeric vector, length 2)
-    %   smoothGaussianStdInBin  - Gaussian smoothing std in bins (numeric scalar ≥ 0)
+    %   neus2consider           - Neuron indices to include (numeric/logical vector)
+    %   conds2consider          - Condition indices to include (numeric/logical vector)
     %
     % OUTPUT:
     %   obj                     - Updated RecordedData object
@@ -16,7 +17,7 @@ function obj = prepareTensorWithFixBin(obj, window, binWidth, smoothGaussianStdI
     %
     % REMARKS:
     %   - Firing rates in spikes/second
-    %   - Overlapping bins computed using moving sum
+    %   - Overlapping bins computed using moving mean
     %   - Uses progress bar for monitoring
     %   - binWidth(1): bin size; binWidth(2): overlap (0 for no overlap)
     
@@ -27,62 +28,88 @@ function obj = prepareTensorWithFixBin(obj, window, binWidth, smoothGaussianStdI
     TensorWithFixBinInfo = obj.TensorWithFixBinInfo;
     TensorWithFixBinInfo.window = window;
     TensorWithFixBinInfo.binWidth = binWidth;
-    TensorWithFixBinInfo.smoothGaussianStdInBin = smoothGaussianStdInBin;
 
-    [nNeu, nCond] = size(CS);
-    nMaxTrial = max(cellfun(@numel, CS(:)));
-    nMarker = numel(MS{5,1}{1,1});
+    if nargin < 5 || isempty(neus2consider) || isempty(conds2consider)
+        error('neus2consider and conds2consider are required and cannot be empty.');
+    end
+    if islogical(neus2consider)
+        neus2consider = find(neus2consider);
+    end
+    if islogical(conds2consider)
+        conds2consider = find(conds2consider);
+    end
+    neus2consider = reshape(neus2consider, 1, []);
+    conds2consider = reshape(conds2consider, 1, []);
+
+    nSelectedNeu = numel(neus2consider);
+    nSelectedCond = numel(conds2consider);
+    selectedCS = CS(neus2consider, conds2consider);
+    nMaxTrial = max(cellfun(@numel, selectedCS(:)));
+    nMarker = numel(MS{neus2consider(1), conds2consider(1)}{1,1});
     if binWidth(2) > 0 %partially overlapping bins
         edges = window(1) : binWidth(2) : window(3);
     else
         edges = window(1) : binWidth(1) : window(3);
     end
 
-    TensorWithFixBin = nan(nNeu, nCond, nMaxTrial, numel(edges)-1);
-    MarkerTensorForFixBin = nan(nNeu, nCond, nMaxTrial, nMarker);
+    TensorWithFixBin = nan(nSelectedNeu, nSelectedCond, nMaxTrial, numel(edges)-1);
+    MarkerTensorForFixBin = nan(nSelectedNeu, nSelectedCond, nMaxTrial, nMarker);
+    TensorWithFixBinInfo.neus2consider = neus2consider;
+    TensorWithFixBinInfo.conds2consider = conds2consider;
 
     % Progress bar
-    progressBar = waitbar(0, 'Preparing fixed-bin tensor: Neuron 0 / ' + string(nNeu) + ', Condition 0 / ' + string(nCond));
+    progressBar = waitbar(0, 'Preparing fixed-bin tensor: Neuron 0 / ' + string(nSelectedNeu) + ', Condition 0 / ' + string(nSelectedCond));
 
-    for neu = 1:nNeu
-        for cond = 1:nCond
+    for neuIdx = 1:nSelectedNeu
+        neu = neus2consider(neuIdx);
+        for condIdx = 1:nSelectedCond
+            cond = conds2consider(condIdx);
             % Update progress bar
-            progress = (neu - 1) / nNeu + (1 / nNeu) * (cond / nCond);
-            waitbar(progress, progressBar, sprintf('Preparing fixed-bin tensor: Neuron %d / %d, Condition %d / %d', neu, nNeu, cond, nCond));
+            progress = (neuIdx - 1) / nSelectedNeu + (1 / nSelectedNeu) * (condIdx / nSelectedCond);
+            waitbar(progress, progressBar, sprintf('Preparing fixed-bin tensor: Neuron %d / %d, Condition %d / %d', neuIdx, nSelectedNeu, condIdx, nSelectedCond));
 
             for trial = 1:size(CS{neu, cond},2)
                 markers = MS{neu,cond}{1,trial};
                 for m = 1:nMarker
-                    [~,~,I] = histcounts(markers(m), edges+markers(window(2)));
-                    if I ~= 0 %if the marker is present in the interval
-                        MarkerTensorForFixBin(neu, cond, trial, m) = I;
-                    end
-
-                end
-                tmp_trial = histcounts(CS{neu,cond}{1,trial}, edges+markers(window(2)));
-                if binWidth(2) > 0 %partially overlapping bins
-                    tmp_trial = movsum(tmp_trial,floor(binWidth(1)/binWidth(2)));
-                end
-                if smoothGaussianStdInBin > 0
-                    if binWidth(2)==0
-                        tmp_trial = smoothdata(tmp_trial,'gaussian',smoothGaussianStdInBin*5);
+                    mkAligned2WinStart = markers(m) - (markers(window(2)) + window(1));
+                    if binWidth(2) > 0
+                        MarkerTensorForFixBin(neuIdx, condIdx, trial, m) = round( mkAligned2WinStart / binWidth(2)); %compute the bin of the marker even if it is outside the window
                     else
-                        tmp_trial = smoothdata(tmp_trial,'gaussian',smoothGaussianStdInBin*5*floor(binWidth(1)/binWidth(2)));
+                        MarkerTensorForFixBin(neuIdx, condIdx, trial, m) = round( mkAligned2WinStart / binWidth(1)); %compute the bin of the marker even if it is outside the window
                     end
+                    % [~,~,I] = histcounts(markers(m), edges+markers(window(2)));
+                    % if I ~= 0 %if the marker is present in the interval
+                    %     MarkerTensorForFixBin(neuIdx, condIdx, trial, m) = I;
+                    % else %if the marker is NOT present in the interval
+                    %     MarkerTensorForFixBin(neuIdx, condIdx, trial, m) = round(...
+                    %         markers(m)-markers(window(2))-window(1) / binWidth(1)); %compute the bin of the marker even if it is outside
+                    % end
 
                 end
-                TensorWithFixBin(neu,cond,trial,:) = tmp_trial;
+                tmp_trial = histcounts(CS{neu,cond}{1,trial}, edges+markers(window(2)))./binWidth(1); %compute Firing Rate (sp/s)
+                if binWidth(2) > 0 %partially overlapping bins
+                    tmp_trial = movmean(tmp_trial,floor(binWidth(1)/binWidth(2)));
+                end
+                TensorWithFixBin(neuIdx,condIdx,trial,:) = tmp_trial;
             end
         end
     end
 
-    TensorWithFixBinCondAvg = squeeze(mean(TensorWithFixBin,3,'omitmissing'));
+    TensorWithFixBinCondAvg = reshape(mean(TensorWithFixBin,3,'omitmissing'), ...
+        nSelectedNeu, nSelectedCond, numel(edges)-1);
+    MarkerTensorForFixBinCondAvg = reshape(mean(MarkerTensorForFixBin,3,'omitmissing'), ...
+        nSelectedNeu, nSelectedCond, nMarker);
     close(progressBar);
     
+    % Compute trial counts: N x C (number of valid trials per neuron per condition)
+    TrialNumWithFixBin = cellfun(@(c) size(c, 2), CS(neus2consider, conds2consider));
+
     % Assign results to object properties
     obj.TensorWithFixBin = TensorWithFixBin;
     obj.TensorWithFixBinCondAvg = TensorWithFixBinCondAvg;
     obj.MarkerTensorForFixBin = MarkerTensorForFixBin;
+    obj.MarkerTensorForFixBinCondAvg = MarkerTensorForFixBinCondAvg;
     obj.TensorWithFixBinInfo = TensorWithFixBinInfo;
+    obj.TrialNumWithFixBin = TrialNumWithFixBin;
 
 end

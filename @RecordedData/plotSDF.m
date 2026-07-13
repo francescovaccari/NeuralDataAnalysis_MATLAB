@@ -1,82 +1,166 @@
-function plotSDF(obj, neus2consider, conds2consider, order, displayErrorFactor)
+function plotSDF(obj, neus2consider, conds2consider, window, binWidth, order, displayErrorFactor, varargin)
     % PLOTSDF - Plot spike density function with condition comparison
     %
+    % SYNTAX
+    %   obj.plotSDF(neus2consider, conds2consider, window, binWidth, order, displayErrorFactor)
+    %   obj.plotSDF(..., 'markerNames', names)
+    %   obj.plotSDF(..., 'smoothWindow', win)
+    %
     % INPUTS:
-    %   obj                     - RecordedData object
-    %   neus2consider           - Neuron indices (numeric vector)
-    %   conds2consider          - Condition indices (numeric vector)
-    %   order                   - "preference" or "condition" (string)
-    %   displayErrorFactor      - Error bar scaling factor (numeric scalar)
+    %   obj                 - RecordedData object
+    %   neus2consider       - Neuron indices to include (numeric/logical vector)
+    %   conds2consider      - Condition indices to include (numeric/logical vector)
+    %   window              - [start(s), alignmentMarker, end(s)] (length-3 vector)
+    %   binWidth            - [binSize, stepSize] in seconds (length-2 vector;
+    %                         set stepSize = 0 for non-overlapping bins)
+    %   order               - "preference" | "condition"
+    %   displayErrorFactor  - Std scaling factor for shaded error band (numeric scalar)
+    %
+    % OPTIONAL NAME-VALUE PAIRS:
+    %   'markerNames'  - Cell array of strings labelling each marker line.
+    %                    Must have one entry per marker.
+    %   'smoothWindow' - Integer window length in bins for Gaussian smoothing.
+    %                    If omitted, no smoothing is applied.
     %
     % OUTPUT:
-    %   Figure with spike density function for each condition
+    %   Figure with spike density function for each condition.
     %
     % DESCRIPTION:
-    %   Visualizes spike density function (mean firing rate) across multiple neurons
-    %   and conditions. Can sort conditions by neural preference or keep original order.
+    %   Internally calls prepareTensorWithFixBin (and optionally refineNeuralData
+    %   for smoothing) on a temporary copy of the object so the caller's data
+    %   are never modified.  Conditions can be sorted by neural preference
+    %   (peak firing rate) or kept in their original order.
 
-    preprocessedData = [];
+    % ---- Parse optional arguments ----------------------------------------
+    p = inputParser;
+    validMarkerNames = @(x) isempty(x) || ...
+        (iscell(x) && all(cellfun(@(s) ischar(s) || (isstring(s) && isscalar(s)), x(:))));
+    addParameter(p, 'markerNames',  {},  validMarkerNames);
+    addParameter(p, 'smoothWindow', [],  @(x) isempty(x) || ...
+        (isnumeric(x) && isscalar(x) && x == round(x) && x > 0));
+    parse(p, varargin{:});
 
-    preprocessedData.avg = obj.TensorWithFixBinCondAvg(neus2consider,conds2consider,:);
-    if numel(neus2consider) == 1
-        preprocessedData.std = std(obj.TensorWithFixBin(neus2consider,conds2consider,:,:), 0, 3, 'omitnan');
-    else
-        preprocessedData.std = squeeze(std(obj.TensorWithFixBin(neus2consider,conds2consider,:,:), 0, 3, 'omitnan'));
+    markerNames  = p.Results.markerNames;
+    smoothWindow = p.Results.smoothWindow;
+
+    if ~isempty(markerNames)
+        markerNames = cellfun(@char, markerNames(:)', 'UniformOutput', false);
     end
 
-    maxx = max(preprocessedData.avg, [], [3], 'omitnan');
+    % ---- Build tensor (temporary local copy — caller object unchanged) ---
+    tmpObj = obj.prepareTensorWithFixBin(window, binWidth, neus2consider, conds2consider);
+
+    % ---- Optional Gaussian smoothing via refineNeuralData ---------------
+    if ~isempty(smoothWindow)
+        smoothOpt.smoothType   = 'gaussian';
+        smoothOpt.smoothWindow = smoothWindow;
+        tmpObj = tmpObj.refineNeuralData('smooth', smoothOpt, true);
+    end
+
+    % ---- Extract data ----------------------------------------------------
+    nNeus  = size(tmpObj.TensorWithFixBin, 1);
+    nConds = size(tmpObj.TensorWithFixBin, 2);
+    nTime  = size(tmpObj.TensorWithFixBin, 4);
+
+    avgTensor = reshape(mean(tmpObj.TensorWithFixBin, 3, 'omitnan'), nNeus, nConds, nTime);
+    stdTensor = reshape(std( tmpObj.TensorWithFixBin, 0, 3, 'omitnan'), nNeus, nConds, nTime);
+
+    if isfield(tmpObj.TensorWithFixBinInfo, 'conds2consider') && ...
+            numel(tmpObj.TensorWithFixBinInfo.conds2consider) == nConds
+        condLabels = tmpObj.TensorWithFixBinInfo.conds2consider;
+    else
+        condLabels = 1:nConds;
+    end
+
+    % ---- Condition ordering ----------------------------------------------
+    maxx = max(avgTensor, [], 3, 'omitnan');
 
     if strcmp(order, "preference")
-        reorderedAvg = nan(size(preprocessedData.avg));
-        reorderedStd = nan(size(preprocessedData.std));
+        reorderedAvg = nan(size(avgTensor));
+        reorderedStd = nan(size(stdTensor));
         [~, sortIdx] = sort(maxx, 2, 'descend');
-
-        for neu = 1:numel(neus2consider)
-            reorderedAvg(neu, :, :) = preprocessedData.avg(neu, sortIdx(neu, :), :);
-            reorderedStd(neu, :, :) = preprocessedData.std(neu, sortIdx(neu, :), :);
+        for neu = 1:nNeus
+            reorderedAvg(neu, :, :) = avgTensor(neu, sortIdx(neu, :), :);
+            reorderedStd(neu, :, :) = stdTensor(neu, sortIdx(neu, :), :);
         end
-
-        legendLabels = compose('Preference %d', 1:numel(conds2consider));
+        legendLabels = compose('Preference %d', 1:nConds);
     elseif strcmp(order, "condition")
-        reorderedAvg = preprocessedData.avg;
-        reorderedStd = preprocessedData.std;
-        legendLabels = compose('Condition %d', conds2consider);
+        reorderedAvg = avgTensor;
+        reorderedStd = stdTensor;
+        legendLabels = compose('Condition %d', condLabels);
+    else
+        error('plotSDF: unknown order ''%s''. Choose ''preference'' or ''condition''.', order);
     end
 
+    % ---- Build time axis (seconds) ---------------------------------------
+    if numel(binWidth) > 1 && binWidth(2) > 0
+        timeStep = binWidth(2);
+    else
+        timeStep = binWidth(1);
+    end
+    timeAxis = window(1) + (0:nTime-1) * timeStep + binWidth(1)/2;
+
+    % ---- Plot ------------------------------------------------------------
     figure;
     hold on;
-    i = 0;
-    cmap = colormap(jet(numel(conds2consider)));
-    for cond = 1:numel(conds2consider)
-        i = i+1;
-        if numel(neus2consider) == 1
-            avgTrace = squeeze(reorderedAvg(:, cond, :));
-            errTrace = squeeze(reorderedStd(:, cond, :));
+    cmap = colormap(jet(nConds));
+
+    for cond = 1:nConds
+        if nNeus == 1
+            avgTrace = squeeze(reorderedAvg(1, cond, :));
+            errTrace = squeeze(reorderedStd(1, cond, :));
         else
-            avgMatrix = squeeze(reorderedAvg(:, cond, :));
-            stdMatrix = squeeze(reorderedStd(:, cond, :));
-            avgTrace = mean(avgMatrix, 1, 'omitnan')';
-            errTrace = mean(stdMatrix, 1, 'omitnan')';
+            avgTrace = mean(squeeze(reorderedAvg(:, cond, :)), 1, 'omitnan')';
+            errTrace = mean(squeeze(reorderedStd(:, cond, :)), 1, 'omitnan')';
         end
 
         shaded_areas( ...
-            [1:numel(avgTrace)]', ...
+            timeAxis(:), ...
             avgTrace(:), ...
-            errTrace(:)*displayErrorFactor, ...
-            'FaceColor', cmap(i, :), ...
-            'DisplayName', char(legendLabels(i)));
+            errTrace(:) * displayErrorFactor, ...
+            'FaceColor',   cmap(cond, :), ...
+            'DisplayName', char(legendLabels(cond)));
     end
-    xline(squeeze(mean(obj.MarkerTensorForFixBin(neus2consider,conds2consider,:,:),[1 2 3],'omitmissing')))
+
+    % ---- Marker lines (bin positions → time) ----------------------------
+    markerBins  = squeeze(mean(tmpObj.MarkerTensorForFixBin, [1 2 3], 'omitmissing'));
+    markerBins  = markerBins(:)';
+    markerTimes = interp1(1:nTime, timeAxis, markerBins, 'linear', NaN);
+    markerIsPlotted = isfinite(markerTimes);
+
+    if isempty(markerNames)
+        if any(markerIsPlotted)
+            xline(markerTimes(markerIsPlotted));
+        end
+    else
+        if numel(markerNames) ~= numel(markerTimes)
+            error('RecordedData:InvalidMarkerNames', ...
+                'markerNames must contain one name per marker (%d expected).', ...
+                numel(markerTimes));
+        end
+        if any(markerIsPlotted)
+            xline(markerTimes(markerIsPlotted), '-', markerNames(markerIsPlotted), ...
+                'LabelOrientation',       'aligned', ...
+                'LabelHorizontalAlignment', 'left');
+        end
+    end
+
     hold off;
     legend show;
     xlabel('Time (s)');
-    xticks(linspace(1,numel(avgTrace),11))
-    window = obj.TensorWithFixBinInfo.window;
-    xticklabels(linspace(window(1),window(3),11))
-    ylabel('A.U.');
-    if strcmp(order, "preference")
-        title('Spike Density Function ordered by preference');
+    ylabel('Firing Rate (sp/s)');
+    neuStr  = sprintf('neus %d-%d (n=%d)', min(neus2consider), max(neus2consider), numel(neus2consider));
+    condStr = sprintf('conds [%s]', num2str(condLabels));
+    winStr  = sprintf('win [%.3g %.3g] s', window(1), window(3));
+    binStr  = sprintf('bin %.0f/%.0f ms', binWidth(1)*1000, binWidth(2)*1000);
+    if ~isempty(smoothWindow)
+        infoStr = [neuStr ' | ' condStr ' | ' winStr ' | ' binStr ' | smooth ' num2str(smoothWindow) ' bins'];
     else
-        title(['Spike Density Function for conds ' num2str(conds2consider)]);
+        infoStr = [neuStr ' | ' condStr ' | ' winStr ' | ' binStr];
+    end
+    if strcmp(order, "preference")
+        title({'SDF — ordered by preference', infoStr});
+    else
+        title({'SDF — condition order', infoStr});
     end
 end

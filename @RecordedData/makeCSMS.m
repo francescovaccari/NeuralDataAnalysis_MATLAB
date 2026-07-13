@@ -57,6 +57,7 @@ end
 
 StartsOfTrials = [];
 EndsOfTrials = [];
+TrialOnsets = [];
 allPenultimateStates = [];
 
 for s = 1:totalSeq
@@ -112,6 +113,7 @@ for s = 1:totalSeq
 
             StartsOfTrials = [StartsOfTrials; stateStarts(startTrialIdx)];
             EndsOfTrials = [EndsOfTrials; stateEnds(endTrialIdx)];
+            TrialOnsets = [TrialOnsets; events.currentTime(stateStarts(startTrialIdx))];
             allPenultimateStates = [allPenultimateStates; prevStates(endTrialIdx)];
 
         case 'simple_events'
@@ -119,6 +121,12 @@ for s = 1:totalSeq
 
     end
 end
+
+[~, trialOrder] = sort(TrialOnsets);
+StartsOfTrials = StartsOfTrials(trialOrder);
+EndsOfTrials = EndsOfTrials(trialOrder);
+allPenultimateStates = allPenultimateStates(trialOrder);
+
 switch eventType
     case 'per_frame_events'
         stateStartsTS = events.currentTime(stateStarts);
