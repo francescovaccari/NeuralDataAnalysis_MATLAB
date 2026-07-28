@@ -16,9 +16,6 @@ function [dPCAmodel, dPCAprojTrain, dPCAprojTest] = computedPCA(obj, dPCAOpt, pr
 %                                marginalizations to group together (see dpca.m).
 %                                E.g. {{1,[1 3]},{2,[2 3]},{3},{[1 2],[1 2 3]}}
 %     .numComps                - number of dPCA components to extract (scalar)
-%     .simultaneousRecording   - logical; true if all neurons were recorded
-%                                simultaneously (same trial counts), false for
-%                                sequentially recorded neurons
 %     .procedure               - 'simple'               → standard dPCA (no regularization)
 %                                'regularized'           → dPCA with optimal lambda and
 %                                                          noise-covariance (dpca_optimizeLambda +
@@ -335,7 +332,7 @@ dPCAmodel.V         = V;
 dPCAmodel.whichMarg = whichMarg;
 dPCAmodel.Cnoise     = Cnoise;
 dPCAmodel.optimalLambda = optimalLambda;
-dPCAmodel.simultaneousRecording = simultaneousRecording;
+dPCAmodel.simultaneousRecording = obj.simultaneousRecording;
 dPCAmodel.procedure = procedure;
 
 dPCAprojTrain.explVar = explVarTrain;
