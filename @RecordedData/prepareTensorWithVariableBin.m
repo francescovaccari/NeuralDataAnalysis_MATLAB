@@ -75,6 +75,7 @@ function obj = prepareTensorWithVariableBin(obj, window, expectedBinWidth, neus2
         nSelectedNeu, nSelectedCond, 1);
 
     TensorWithVariableBin = nan(nSelectedNeu, nSelectedCond, nMaxTrial, sum(nBins));
+    BinTimestampsForVariableBin = nan(nSelectedNeu, nSelectedCond, nMaxTrial, sum(nBins));
 
     for neuIdx = 1:nSelectedNeu
         neu = neus2consider(neuIdx);
@@ -82,6 +83,7 @@ function obj = prepareTensorWithVariableBin(obj, window, expectedBinWidth, neus2
             cond = conds2consider(condIdx);
             for trial = 1:size(CS{neu, cond},2)
                 tmp_trial = [];
+                tmp_timestamps = [];
                 skip_epo = false;
                 for ep = 1:length(nBins)
                     currentMarkers = fillmissing(MS{neu,cond}{1,trial},'next');
@@ -106,10 +108,12 @@ function obj = prepareTensorWithVariableBin(obj, window, expectedBinWidth, neus2
 
                     time_edges = ii:realBinWidth:ff;
                     tmp_trial = [tmp_trial histcounts(CS{neu,cond}{1,trial},time_edges)./realBinWidth];
+                    tmp_timestamps = [tmp_timestamps, (time_edges(1:end-1) + time_edges(2:end)) / 2];
                     TensorWithVariableBinInfo.realBinWidth(neuIdx, condIdx, trial, ep) = realBinWidth;
                 end
 
                 TensorWithVariableBin(neuIdx,condIdx,trial,:) = tmp_trial;
+                BinTimestampsForVariableBin(neuIdx, condIdx, trial, :) = tmp_timestamps;
             end
         end
     end
@@ -127,4 +131,5 @@ function obj = prepareTensorWithVariableBin(obj, window, expectedBinWidth, neus2
     obj.MarkerTensorForVariableBinCondAvg = MarkerTensorForVariableBinCondAvg;
     obj.TensorWithVariableBinInfo = TensorWithVariableBinInfo;
     obj.TrialNumWithVariableBin = TrialNumWithVariableBin;
+    obj.BinTimestampsForVariableBin = BinTimestampsForVariableBin;
 end
