@@ -19,6 +19,7 @@ classdef RecordedData
     properties (SetAccess = public)
         % Input data
         Filename (1,1) string           % Path to loaded MAT file
+        simultaneousRecording (1,1) logical = false  % True/false (if true it speeds up computations because MS, TC, kin will be the same for each unit)
         CS = [];                         % Spike times (neurons × conditions × trials)
         MS = [];                         % State marker times (neurons × conditions × trials)
         KIN = [];                        % Kinematic data (optional)
@@ -34,6 +35,7 @@ classdef RecordedData
         MarkerTensorForVariableBin = [];           % Marker times trial-by-trial (neurons × conditions × trials × marker)
         MarkerTensorForVariableBinCondAvg = [];    % Marker times condition averaged (neurons × conditions × marker)
         TrialNumWithVariableBin = [];              % Trial counts for variable-bin pipeline (neurons × conditions)
+        BinTimestampsForVariableBin = [];        % Bin center timestamps for variable-bin pipeline (neurons × conditions × trials × bins)
 
         % Fixed-bin tensors
         TensorWithFixBinInfo = struct();           % Metadata for fixed-bin tensor
@@ -42,6 +44,7 @@ classdef RecordedData
         MarkerTensorForFixBin = [];                % Marker times trial-by-trial (neurons × conditions × trials × marker)
         MarkerTensorForFixBinCondAvg = [];         % Marker times condition averaged (neurons × conditions × marker)
         TrialNumWithFixBin = [];                   % Trial counts for fixed-bin pipeline (neurons × conditions)
+        BinTimestampsForFixBin = [];             % Bin center timestamps for fixed-bin pipeline (neurons × conditions × trials × bins)
 
         % Parameter-split tensor
         TensorWithParamsInfo = struct();         % Metadata for parameter-split tensor
@@ -49,8 +52,9 @@ classdef RecordedData
         TensorWithParamsCondAvg = [];            % Condition-averaged tensor (neurons × param1 x param2 x ... × time)
         MarkerTensorForParams = [];              % State marker times in parameter-split tensor
         TrialNumWithParams = [];                 % Trial counts (neurons × param1 × param2 × ...)
-     
-        
+        BinTimestampsForParams = [];             % Bin center timestamps for parameter-split tensor (neurons × param1 × param2 × ... × trials × bins)     
+       
+
     end
 
     %% ===== PUBLIC METHODS =====
@@ -76,6 +80,9 @@ classdef RecordedData
         obj = prepareTensorWithFixBin(obj, window, binWidth, neus2consider, conds2consider)
 
         obj = splitTensorWithParams(obj, params, fixedBinFlag)
+
+        %% REGRESSOR TENSOR METHODS
+        [tensorOut, infoOut] = addVariable2Tensor(obj, tensorIn, opt)
 
         %% DATA REFINEMENT METHODS
         obj = refineNeuralData(obj, refType, refOpt, fixedFlag)
@@ -106,7 +113,7 @@ classdef RecordedData
     %% ===== STATIC METHODS (CLASS CONSTRUCTION) =====
     methods (Static)
         %% loadData
-        obj = loadData(filename)
+        obj = loadData(filename, simultaneousRecording)
 
         %% makeCSMS
         obj = makeCSMS(filenameSpikes, filenameEvents, eventType, stateSeqs, matchOpt, otherMarkers)
