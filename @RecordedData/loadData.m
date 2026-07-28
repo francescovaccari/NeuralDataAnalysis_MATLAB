@@ -1,11 +1,16 @@
-function obj = loadData(filename)
+function obj = loadData(filename, simultaneousRecording)
 % LOADDATA - Load neural recording data from MAT file (static method)
 %
 % SYNTAX:
 %   recordedData = RecordedData.loadData(filename)
+%   recordedData = RecordedData.loadData(filename, simultaneousRecording)
 %
 % INPUTS:
-%   filename    - Path to MAT file (string | char)
+%   filename              - Path to MAT file (string | char)
+%   simultaneousRecording - (optional) logical flag indicating whether units
+%                           were recorded simultaneously; if true, MS, TC and
+%                           KIN are shared across units, which speeds up
+%                           computations (default: false)
 %
 % OUTPUT:
 %   obj         - RecordedData object with loaded data
@@ -22,12 +27,36 @@ function obj = loadData(filename)
 %
 % EXAMPLE:
 %   recordedData = RecordedData.loadData('/path/to/mydata.mat');
+%   recordedData = RecordedData.loadData('/path/to/mydata.mat', true);
 %   disp(size(recordedData.CS));   % neurons × conditions
 %
 % See also: makeCSMS
 
+if nargin < 2 || isempty(simultaneousRecording)
+    simultaneousRecording = false;
+end
+
 filename = RecordedData.validateFilename(filename);
-loadedData = load(filename, 'CS', 'MS', 'KIN', 'EY', 'TC', 'TCTS');
+if ~simultaneousRecording 
+    loadedData = load(filename, 'CS', 'MS', 'KIN', 'EY', 'TC', 'TCTS');
+else
+    mFile = matfile(filename);
+    loadedData = struct();
+    loadedData.CS = mFile.CS;
+    loadedData.MS = repmat(mFile.MS(1,:), size(mFile.CS, 1), 1);
+    if isprop(mFile, 'KIN')
+        loadedData.KIN = repmat(mFile.KIN(1,:), size(mFile.CS, 1), 1);
+    end
+    if isprop(mFile, 'EY')
+        loadedData.EY = repmat(mFile.EY(1,:), size(mFile.CS, 1), 1);
+    end
+    if isprop(mFile, 'TC')
+        loadedData.TC = repmat(mFile.TC(1,:), size(mFile.CS, 1), 1);
+    end
+    if isprop(mFile, 'TCTS')
+        loadedData.TCTS = repmat(mFile.TCTS(1,:), size(mFile.CS, 1), 1);
+    end
+end
 
 requiredVariables = ["CS", "MS", "KIN", "EY"];
 loadedVariables = string(fieldnames(loadedData));
@@ -41,6 +70,7 @@ end
 
 obj = RecordedData();
 obj.Filename = filename;
+obj.simultaneousRecording = simultaneousRecording;
 obj.CS = RecordedData.getLoadedVariableOrDefault(loadedData, 'CS');
 obj.MS = RecordedData.getLoadedVariableOrDefault(loadedData, 'MS');
 obj.KIN = RecordedData.getLoadedVariableOrDefault(loadedData, 'KIN');
