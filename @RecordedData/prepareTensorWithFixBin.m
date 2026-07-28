@@ -52,7 +52,9 @@ function obj = prepareTensorWithFixBin(obj, window, binWidth, neus2consider, con
         edges = window(1) : binWidth(1) : window(3);
     end
 
+    relativeBinCenters = (edges(1:end-1) + edges(2:end)) / 2;
     TensorWithFixBin = nan(nSelectedNeu, nSelectedCond, nMaxTrial, numel(edges)-1);
+    BinTimestampsForFixBin = nan(nSelectedNeu, nSelectedCond, nMaxTrial, numel(edges)-1);
     MarkerTensorForFixBin = nan(nSelectedNeu, nSelectedCond, nMaxTrial, nMarker);
     TensorWithFixBinInfo.neus2consider = neus2consider;
     TensorWithFixBinInfo.conds2consider = conds2consider;
@@ -70,27 +72,31 @@ function obj = prepareTensorWithFixBin(obj, window, binWidth, neus2consider, con
 
             for trial = 1:size(CS{neu, cond},2)
                 markers = MS{neu,cond}{1,trial};
-                for m = 1:nMarker
-                    mkAligned2WinStart = markers(m) - (markers(window(2)) + window(1));
-                    if binWidth(2) > 0
-                        MarkerTensorForFixBin(neuIdx, condIdx, trial, m) = round( mkAligned2WinStart / binWidth(2)); %compute the bin of the marker even if it is outside the window
-                    else
-                        MarkerTensorForFixBin(neuIdx, condIdx, trial, m) = round( mkAligned2WinStart / binWidth(1)); %compute the bin of the marker even if it is outside the window
-                    end
-                    % [~,~,I] = histcounts(markers(m), edges+markers(window(2)));
-                    % if I ~= 0 %if the marker is present in the interval
-                    %     MarkerTensorForFixBin(neuIdx, condIdx, trial, m) = I;
-                    % else %if the marker is NOT present in the interval
-                    %     MarkerTensorForFixBin(neuIdx, condIdx, trial, m) = round(...
-                    %         markers(m)-markers(window(2))-window(1) / binWidth(1)); %compute the bin of the marker even if it is outside
-                    % end
-
+                mksAligned2WinStart = markers - (markers(window(2)) + window(1)); %align markers with the beginning of the window of interest
+                if binWidth(2) > 0
+                    binWidth2use = binWidth(2);
+                else
+                    binWidth2use = binWidth(1);
                 end
+                tmpMks = (floor(abs(mksAligned2WinStart)/ binWidth2use)+1).*sign(mksAligned2WinStart); %vectorized implementation
+                tmpMks(tmpMks==0) = 1; %bin number 0 have no sense
+                MarkerTensorForFixBin(neuIdx, condIdx, trial, :) = tmpMks;
+                %% similar but with a for loop
+                % for m = 1:nMarker
+                %     mkAligned2WinStart = markers(m) - (markers(window(2)) + window(1));
+                %     if binWidth(2) > 0
+                %         MarkerTensorForFixBin(neuIdx, condIdx, trial, m) = round( mkAligned2WinStart / binWidth(2)); %compute the bin of the marker even if it is outside the window
+                %     else
+                %         MarkerTensorForFixBin(neuIdx, condIdx, trial, m) = round( mkAligned2WinStart / binWidth(1)); %compute the bin of the marker even if it is outside the window
+                %     end
+                % 
+                % end
                 tmp_trial = histcounts(CS{neu,cond}{1,trial}, edges+markers(window(2)))./binWidth(1); %compute Firing Rate (sp/s)
                 if binWidth(2) > 0 %partially overlapping bins
                     tmp_trial = movmean(tmp_trial,floor(binWidth(1)/binWidth(2)));
                 end
                 TensorWithFixBin(neuIdx,condIdx,trial,:) = tmp_trial;
+                BinTimestampsForFixBin(neuIdx, condIdx, trial, :) = relativeBinCenters + markers(window(2));
             end
         end
     end
@@ -111,5 +117,6 @@ function obj = prepareTensorWithFixBin(obj, window, binWidth, neus2consider, con
     obj.MarkerTensorForFixBinCondAvg = MarkerTensorForFixBinCondAvg;
     obj.TensorWithFixBinInfo = TensorWithFixBinInfo;
     obj.TrialNumWithFixBin = TrialNumWithFixBin;
+    obj.BinTimestampsForFixBin = BinTimestampsForFixBin;
 
 end
