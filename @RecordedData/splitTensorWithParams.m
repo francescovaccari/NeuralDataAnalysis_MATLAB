@@ -33,6 +33,12 @@ function obj = splitTensorWithParams(obj, params, fixedBinFlag)
         sourceTensor = obj.TensorWithVariableBin;
     end
 
+    if fixedBinFlag
+        sourceTS = obj.BinTimestampsForFixBin;
+    else
+        sourceTS = obj.BinTimestampsForVariableBin;
+    end
+
     nPreparedConds = size(sourceTensor, 2);
     if isvector(params) && nPreparedConds > 1
         params = params(:);
@@ -100,6 +106,7 @@ function obj = splitTensorWithParams(obj, params, fixedBinFlag)
 
     TensorWithParams    = nan([nNeurons, paramDims, maxMergedTrials, nTime]);
     TensorWithParamsCondAvg = nan([nNeurons, paramDims, nTime]);
+    BinTimestampsForParams = nan([nNeurons, paramDims, maxMergedTrials, nTime]);
 
     % Track how many trials have been filled for each parameter combination.
     trialFill = zeros(1, nParamCombinations);
@@ -121,6 +128,10 @@ function obj = splitTensorWithParams(obj, params, fixedBinFlag)
 
         TensorWithParams(indices{:}) = reshape(sourceTensor(:, cond, :, :), ...
             [nNeurons, ones(1, nParams), nTrials, nTime]);
+        if ~isempty(sourceTS)
+            BinTimestampsForParams(indices{:}) = reshape(sourceTS(:, cond, :, :), ...
+                [nNeurons, ones(1, nParams), nTrials, nTime]);
+        end
     end
 
     % Condition average: mean over the merged trials dimension.
@@ -138,4 +149,5 @@ function obj = splitTensorWithParams(obj, params, fixedBinFlag)
     obj.TensorWithParams = TensorWithParams;
     obj.TensorWithParamsCondAvg = TensorWithParamsCondAvg;
     obj.TrialNumWithParams = TrialNumWithParams;
+    obj.BinTimestampsForParams = BinTimestampsForParams;
 end
