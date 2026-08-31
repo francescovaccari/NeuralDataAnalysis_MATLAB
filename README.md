@@ -45,6 +45,8 @@ Documentation and organization may improve over time as new functions are added.
 
 ### Hadjidimitrakis, Vaccari et al., 2026, iScience
 
+Miscellaneous functions/...
+
 - **`analyzeGazeData.m`** – Analyzes gaze position data to detect and characterize saccadic and fixation events based on velocity thresholds.
 
 - **`computeDAMindex.m`** – Computes a data-availability/adjacency-missingness (DAM) index to quantify missing data in 2-D matrices, accounting for spatial clustering of missing elements.
