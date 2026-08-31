@@ -49,7 +49,7 @@ Miscellaneous functions/...
 
 - **`analyzeGazeData.m`** – Analyzes gaze position data to detect and characterize saccadic and fixation events based on velocity thresholds.
 
-- **`computeDAMindex.m`** – Computes a data-availability/adjacency-missingness (DAM) index to quantify missing data in 2-D matrices, accounting for spatial clustering of missing elements.
+- **`computeDAMindex.m`** – Computes a data-availability/adjacency-missingness 'damage' (DAM) index to quantify missing data in 2-D matrices, accounting for spatial clustering of missing elements.
 
 - **`computePI.m`** – Computes the Preference Index (PI) as a measure of population neural response favorability (Moody et al., 1998, Hadjidimitrakis et al., 2011).
 
