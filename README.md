@@ -41,7 +41,9 @@ If no specific related paper is indicated in the function header, please cite th
 This repository is intended as a personal and evolving collection of research code.  
 Documentation and organization may improve over time as new functions are added.
 
-## Some miscellaneous functions
+## Code used in papers:
+
+### Hadjidimitrakis, Vaccari et al., 2026, iScience
 
 - **`analyzeGazeData.m`** – Analyzes gaze position data to detect and characterize saccadic and fixation events based on velocity thresholds.
 
