@@ -21,12 +21,14 @@ nNeu      = size(recordedData.CS,1);   % Total number of recorded neurons
 nOrigCond = size(recordedData.CS,2);   % Total number of original (pre-merge) conditions
 
 % Identify neurons that have NO spike data in ANY condition and flag them for exclusion
+% neus2NOTconsider = [1:15]';
 neus2NOTconsider = [];
 for neu = 1:nNeu
     for cond = 1:nOrigCond
         % If all trials for this neuron/condition are empty, mark the neuron
         if all(cellfun(@isempty, recordedData.CS{neu,cond}), 'all');
             neus2NOTconsider = [neus2NOTconsider; neu];
+            continue
         end
     end
 end
@@ -68,14 +70,19 @@ conditions.Obstacle6(conditions.Obstacle6 == 4) = 2;
 
 % %% Plot PSTH  (Peri-Stimulus Time Histogram)
 % Plots the trial-averaged firing rate of a single neuron around a task event.
-%
-neu2consider   = 61;       % Index of the neuron to plot
-conds2consider = [15];     % Which merged condition(s) to include in the plot
+
+
+conds2consider = [14 13 15 16]; %[2 1 3 4];%[14 13 15 16]; %[6 5 7 8];     % Which merged condition(s) to include in the plot
 window =  [-3 7 2];        % Analysis window: [time before marker, marker index, time after marker] (seconds)
 bin = 0.04;                % Histogram bin width in seconds (40 ms)
 vars2plot = {'TC'}; % Which signal to plot: 'TC' = touchscreen coordinates
 
-recordedData.plotPSTH(neu2consider, conds2consider, window, bin, vars2plot, 'markerNames', markerNames)
+neu2consider   = 12;       % Index of the neuron to plot
+recordedData.plotPSTH(neu2consider, conds2consider, window, bin, vars2plot, 'markerNames', markerNames, 'maxTrialsToPlot', 10)
+neu2consider   = 28;       % Index of the neuron to plot
+recordedData.plotPSTH(neu2consider, conds2consider, window, bin, vars2plot, 'markerNames', markerNames, 'maxTrialsToPlot', 10)
+neu2consider   = 32;       % Index of the neuron to plot
+recordedData.plotPSTH(neu2consider, conds2consider, window, bin, vars2plot, 'markerNames', markerNames, 'maxTrialsToPlot', 10)
 
 %% dPCA  (demixed Principal Component Analysis)
 % dPCA separates the population activity into components that are "demixed" by
@@ -91,28 +98,30 @@ dPCAOpt.procedure = 'simple';          % Use the standard dPCA fitting procedure
 % --- Data pre-processing options ---
 processingOpt.fixedFlag      = true;           % Use fixed-length time bins
 processingOpt.neus2consider  = neus2consider;  % Only include neurons with valid spike data
-processingOpt.binWidth       = [0.1 0.05];     % [bin size, step size] in seconds (fixed-bin mode)
+processingOpt.binWidth       = [0.05 0.025];     % [bin size, step size] in seconds (fixed-bin mode)
 % processingOpt.expectedBinWidth = 0.1;        % Alternative: expected bin width for variable-bin mode
 processingOpt.smoothGaussianStdInBin = 0;      % Gaussian smoothing SD in bins (0 = no smoothing)
 processingOpt.refType = 'normalize';           % Normalize firing rates before dPCA
 processingOpt.refOpt.normType = 'soft-norm'; processingOpt.refOpt.normConstant = 'mean'; processingOpt.refOpt.normConstantMultiplier = 0.5; % extra normalization options for soft-normalization
 
 % --- Training set options ---
-trainOpt.conds2consider4train = [2 1 3 4] ;    % Condition used to fit the dPCA model
+trainOpt.conds2consider4train = [14 13 15 16]; %[2 1 3 4]; %[6 5 7 8] ; %    % Condition used to fit the dPCA model
 % Build a [nCond x nParam] matrix of task parameters (in this case, 2: target, obstacle) for each training condition
 trainOpt.trainParams          = [conditions.Target6(trainOpt.conds2consider4train), conditions.Obstacle6(trainOpt.conds2consider4train)];
-trainOpt.trainWindow          = [-0.5 7 0.75]; % Training time window: [pre, marker index, post] in seconds
+trainOpt.trainWindow          = [-1 7 1]; % Training time window: [pre, marker index, post] in seconds
 % trainOpt.trainWindow          = [3 9];       % Alternative: first and last markers for the variable-bin mode
 
 % --- Test set options --- NOTE: the test set can be different from the training set to assess generalization
-testOpt.conds2consider4test  = [2 1 3 4] ;     % Condition used to project/test the model ()
+testOpt.conds2consider4test  = [14 13 15 16];%[2 1 3 4];% [6 5 7 8] ; % ;     % Condition used to project/test the model ()
 testOpt.testParams           = [conditions.Target6(testOpt.conds2consider4test), conditions.Obstacle6(testOpt.conds2consider4test)];
 testOpt.testWindow           = [-1 7 1];        % Test time window: [pre, marker index, post] in seconds
 % testOpt.testWindow           = [1 11];        % Alternative: first and last markers for the variable-bin mode
 
 % --- Visualization options ---
 vOpt.marginalizationNames = {'TG', 'OBS', 'Condition-independent', 'TG/OBS Interaction'}; % Labels for each dPCA axis
+vOpt.paramNames = {'TG', 'OBS'};
 vOpt.legendSubplot        = 16;  % Which subplot to place the legend in
+vOpt.markerNames = markerNames
 
 % Run dPCA: returns the model, projections on training data, and projections on test data
 [mdl, projTr, projTe] = recordedData.computedPCA(dPCAOpt, processingOpt, trainOpt, testOpt, vOpt);
@@ -129,15 +138,15 @@ processingOpt.binWidth         = [0.1 0.05];     % [bin size, step size] in seco
 processingOpt.smoothGaussianStdInBin = 0;        % No Gaussian smoothing
 
 % --- Training set options  ---
-trainOpt.conds2consider4train = [6 5 7 8];       % Condition indices for training
+trainOpt.conds2consider4train = [2 1 3 4] %  [6 5 7 8];  %   % Condition indices for training
 trainOpt.trainParams          = [conditions.Target6(trainOpt.conds2consider4train), conditions.Obstacle6(trainOpt.conds2consider4train)];
-trainOpt.trainWindow          = [-1 3 1];         % Window around marker 3 (TgObsOn): 1 s before to 1 s after
+trainOpt.trainWindow          = [-1 7 1];         % Window around marker 3 (TgObsOn): 1 s before to 1 s after
 %trainOpt.trainWindow = [6 7];                    % Alternative: first and last markers for the variable-bin mode
 
 % --- Test set options  --- NOTE: the test set can be different from the training set to assess generalization
-testOpt.conds2consider4test  = [2 1 3 4];
+testOpt.conds2consider4test  = [14 13 15 16]%[6 5 7 8];%[2 1 3 4]; %
 testOpt.testParams           = [conditions.Target6(testOpt.conds2consider4test), conditions.Obstacle6(testOpt.conds2consider4test)];
-testOpt.testWindow           = [-1 3 1];          % Same window as training
+testOpt.testWindow           = [-1 7 1];          % Same window as training
 %testOpt.testWindow  = [1 11];                    % Alternative: first and last markers for the variable-bin mode
 
 % --- Classifier options ---
@@ -148,6 +157,7 @@ decoderOpt.CVKfold    = 5;            % 5-fold cross-validation
 visOpt.factorNames = {'target','obs'};  % Labels for the two decoded factors
 visOpt.display     = 'accuracy';        % Show classification accuracy (not confusion matrix)
 visOpt.markerNames = markerNames;       % Event markers for the time-axis labels
+visOpt.displayEpochDecoding = false;
 
 % Run decoding: returns time-resolved accuracy scores, binned data, and trained models
 [scores, data, mdls] = recordedData.neuralDecodingClassification( ...
@@ -158,13 +168,13 @@ visOpt.markerNames = markerNames;       % Event markers for the time-axis labels
 %% SDF  (Spike Density Function)
 % Plots smoothed firing-rate traces for each neuron across selected conditions.
 % Neurons are sorted either by their preferred condition or by condition index.
-window = [-3 7 2];          % Analysis window: [pre, marker index, post] in seconds
+window = [-2 3 1];          % Analysis window: [pre, marker index, post] in seconds
 binWidth = [0.05 0];        % [bin size, step (0 = non-overlapping bins)] in seconds
 gaussianWidth = 5;          % Width of the Gaussian smoothing kernel (in bins)
 order = "preference";       % Sort neurons by preferred condition ("preference") or condition number ("condition")
 displayErrorFactor = 0.05;  % Scaling factor for the shaded error region (e.g. SEM)
 neus2consider = neus2consider;   % Neurons to include in the plot
-conds2consider = [6 5 7 8];      % Conditions to display (obstacle-present group)
+conds2consider = [2 1 3 4]; %[14 13 15 16]; %[6 5 7 8];      % Conditions to display (obstacle-present group)
 
 recordedData.plotSDF(neus2consider, conds2consider, window, binWidth, order, displayErrorFactor, ...
     'smoothWindow', 5, 'markerNames', markerNames);
@@ -172,11 +182,11 @@ recordedData.plotSDF(neus2consider, conds2consider, window, binWidth, order, dis
 %% ANOVA su params  (ANOVA on task parameters)
 % Runs a sliding-window ANOVA for each neuron to identify time bins where
 % firing rate is significantly modulated by obstacle, target, or their interaction.
-refWindow = [-1 7 1];       % Reference window for baseline normalization: [pre, marker, post]
-anaWindow = [-1 7 1];       % Analysis window (same as reference here)
+refWindow = [-1 3 1];       % Reference window for baseline normalization: [pre, marker, post]
+anaWindow = [-1 3 1];       % Analysis window (same as reference here)
 binWidth = [0.10 0]         % Bin width in seconds (100 ms non-overlapping bins)
 neus2consider = neus2consider;    % Neurons to analyze
-conds2consider = [6 5 7 8];      % Conditions to include (obstacle-present group)
+conds2consider = [2 1 3 4]%[6 5 7 8];      % Conditions to include (obstacle-present group)
 factorNames = {'epoch','obstacle','target'};  % Labels for the ANOVA factors
 % Build parameter matrix: each row is a condition, columns are obstacle and target codes
 params = [conditions.Obstacle6(conds2consider), conditions.Target6(conds2consider)];
