@@ -59,6 +59,21 @@ function [dPCAmodel, dPCAprojTrain, dPCAprojTest] = computedPCA(obj, dPCAOpt, pr
 %     .marginalizationColours - (nMarg x 3) colour matrix
 %     .legendSubplot          - subplot index for the legend panel
 %                               (default: 16)
+%     .paramNames             - cell array of names for the task parameters
+%                               (the columns of trainParams/testParams),
+%                               used to label the legend panel in the
+%                               summary figure instead of the generic
+%                               'Param 1', 'Param 2', ... .
+%     .markerNames            - cell array labelling the temporal markers
+%                               drawn as vertical lines in the component
+%                               plots (same convention as in
+%                               neuralDecodingClassification). May either
+%                               span all experiment markers (indexed the
+%                               same way as AlignedMarkerTensorForFixBin / the
+%                               variable-bin window markers) or have one
+%                               entry per marker actually plotted within
+%                               trainWindow/testWindow. Default: {} (lines
+%                               are drawn unlabeled).
 %
 % -------------------------------------------------------------------------
 % OUTPUTS
@@ -111,6 +126,8 @@ function [dPCAmodel, dPCAprojTrain, dPCAprojTest] = computedPCA(obj, dPCAOpt, pr
 %
 %   vOpt.marginalizationNames = {'target','time','target x time'};
 %   vOpt.legendSubplot        = 16;
+%   vOpt.paramNames           = {'target','obstacle'};
+%   vOpt.markerNames          = {'go-cue', 'movement-onset'};
 %
 %   [mdl, projTr, projTe] = obj.computedPCA(dpOpt, procOpt, trOpt, teOpt, vOpt);
 %
@@ -163,6 +180,14 @@ else
 end
 
 legendSubplot = getOptField(visOpt, 'legendSubplot', 16);
+paramNames    = getOptField(visOpt, 'paramNames', {});
+markerNames   = getOptField(visOpt, 'markerNames', {});
+
+if ischar(markerNames) || isstring(markerNames)
+    markerNames = cellstr(markerNames(:))';
+elseif iscell(markerNames)
+    markerNames = cellfun(@char, markerNames(:)', 'UniformOutput', false);
+end
 
 % ---- Build tensors -------------------------------------------------------
 if fixedFlag
@@ -231,11 +256,13 @@ nTimeTest  = size(XtestCondAvg,  ndims(XtestCondAvg));
 
 % ---- Build time axes and event markers -----------------------------------
 if fixedFlag
-    [timeTrain, timeEventsTrain] = buildTimeOptions(trainInfo, nTimeTrain, true,  trainWindow, binWidth);
-    [timeTest,  timeEventsTest]  = buildTimeOptions(testInfo,  nTimeTest,  true,  testWindow,  binWidth);
+    timeTrain = trainObj.TensorWithFixBinInfo.relativeBinCenters;
+    timeTest  = testObj.TensorWithFixBinInfo.relativeBinCenters;
+    [timeEventsTrain, timeEventsIdxTrain] = trainObj.computeAlignedMarkerTimes(trainWindow);
+    [timeEventsTest,  timeEventsIdxTest]  = testObj.computeAlignedMarkerTimes(testWindow);
 else
-    [timeTrain, timeEventsTrain] = buildTimeOptions(trainInfo, nTimeTrain, false, [], []);
-    [timeTest,  timeEventsTest]  = buildTimeOptions(testInfo,  nTimeTest,  false, [], []);
+    [timeTrain, timeEventsTrain, timeEventsIdxTrain] = buildTimeOptions(trainInfo, nTimeTrain, false, trainWindow, []);
+    [timeTest,  timeEventsTest,  timeEventsIdxTest]  = buildTimeOptions(testInfo,  nTimeTest,  false, testWindow,  []);
 end
 
 % ---- Run dPCA on training data -------------------------------------------
@@ -288,15 +315,30 @@ else
         'combinedParams', combinedParams);
 end
 
-dpca_plot(XtrainCondAvg, W, V, @dpca_plot_default, ...
+%% Original plotting function as provided by Kobak2016
+% dpca_plot(XtrainCondAvg, W, V, @dpca_plot_default, ...
+%     'whichMarg',              whichMarg, ...
+%     'explainedVar',           explVarTrain, ...
+%     'marginalizationNames',   margNames, ...
+%     'marginalizationColours', margColours, ...
+%     'time',                   timeTrain, ...
+%     'timeEvents',             timeEventsTrain, ...
+%     'timeMarginalization',    ndims(XtrainCondAvg), ...
+%     'legendSubplot',          legendSubplot);
+
+%% Generalized plotting function for more parameters
+dpca_plot_general(XtrainCondAvg, W, V, @dpca_plot_general_default, ...
     'whichMarg',              whichMarg, ...
     'explainedVar',           explVarTrain, ...
     'marginalizationNames',   margNames, ...
-    'marginalizationColours', margColours, ...
     'time',                   timeTrain, ...
     'timeEvents',             timeEventsTrain, ...
+    'timeEventsIdx',          timeEventsIdxTrain, ...
     'timeMarginalization',    ndims(XtrainCondAvg), ...
-    'legendSubplot',          legendSubplot);
+    'legendSubplot',          legendSubplot, ...
+    'paramNames',             paramNames, ...
+    'markerNames',            markerNames, ...
+    'uniqueYLim',             true);
 
 try
     infoStr = sprintf('neus %d-%d (n=%d) | train win [%.3g %.3g]s | %s | %d comps', ...
@@ -309,15 +351,30 @@ catch; end
 explVarTest = dpca_explainedVariance(XtestCondAvg, W, V, ...
     'combinedParams', combinedParams);
 
-dpca_plot(XtestCondAvg, W, V, @dpca_plot_default, ...
+%% Original plotting function as provided by Kobak2016
+%dpca_plot(XtestCondAvg, W, V, @dpca_plot_default, ...
+   % 'whichMarg',              whichMarg, ...
+    %'explainedVar',           explVarTest, ...
+    %'marginalizationNames',   margNames, ...
+    %'marginalizationColours', margColours, ...
+    %'time',                   timeTest, ...
+    %'timeEvents',             timeEventsTest, ...
+    %'timeMarginalization',    ndims(XtestCondAvg), ...
+    %'legendSubplot',          legendSubplot);
+
+%% Generalized plotting function for more parameters
+dpca_plot_general(XtestCondAvg, W, V, @dpca_plot_general_default, ...
     'whichMarg',              whichMarg, ...
     'explainedVar',           explVarTest, ...
     'marginalizationNames',   margNames, ...
-    'marginalizationColours', margColours, ...
     'time',                   timeTest, ...
     'timeEvents',             timeEventsTest, ...
+    'timeEventsIdx',          timeEventsIdxTest, ...
     'timeMarginalization',    ndims(XtestCondAvg), ...
-    'legendSubplot',          legendSubplot);
+    'legendSubplot',          legendSubplot, ...
+    'paramNames',             paramNames, ...
+    'markerNames',            markerNames, ...
+    'uniqueYLim',             true);
 
 try
     infoStr = sprintf('neus %d-%d (n=%d) | test win [%.3g %.3g]s | %s | %d comps', ...
@@ -342,39 +399,37 @@ end
 
 %% ---- LOCAL FUNCTIONS -------------------------------------------------------
 
-function [timeAxis, timeEvents] = buildTimeOptions(info, nTime, fixedFlag, window, binWidth)
-% Build a time axis and event-marker times for dpca_plot.
+function [timeAxis, timeEvents, timeEventsIdx] = buildTimeOptions(info, nTime, fixedFlag, window, binWidth)
+% Build a time axis and event-marker times for dpca_plot (variable-bin only;
+% the fixed-bin case is handled directly in the main function body via
+% TensorWithFixBinInfo.relativeBinCenters and computeAlignedMarkerTimes).
 %
-%  Fixed-bin  : timeAxis in seconds, aligned to window start, bin-centred.
-%               timeEvents interpolated from MarkersFixedBin bin positions.
 %  Variable-bin: timeAxis in seconds using expectedBinWidth as step.
 %               timeEvents at epoch boundaries (cumsum of nBins × binWidth).
+%
+%  timeEventsIdx holds, for each entry in timeEvents, the absolute
+%  experiment-marker index it corresponds to: window(1) + 1:numel(nBins)-1,
+%  since nBins only covers the markers within [window(1) window(2)]. Lets
+%  visOpt.markerNames (which may span all experiment markers) be matched to
+%  the markers actually plotted.
 
     if fixedFlag
-        if numel(binWidth) > 1 && binWidth(2) > 0
-            timeStep = binWidth(2);
-        else
-            timeStep = binWidth(1);
-        end
-        timeAxis = window(1) + (0:nTime-1) * timeStep + binWidth(1)/2;
+        error('buildTimeOptions: the fixed-bin case is handled directly in computedPCA, not via this helper.');
+    end
 
-        if isfield(info, 'MarkersFixedBin') && ~isempty(info.MarkersFixedBin)
-            markerBins = info.MarkersFixedBin(:)';
-            % Interpolate bin positions onto the time axis (out-of-range → NaN)
-            timeEvents = interp1(1:nTime, timeAxis, markerBins, 'linear', NaN)';
-            timeEvents = timeEvents(isfinite(timeEvents));
+    bw       = info.expectedBinWidth;
+    timeAxis = (0:nTime-1) .* bw;
+
+    if isfield(info, 'nBins') && ~isempty(info.nBins)
+        timeEvents = cumsum(info.nBins(1:end-1))' .* bw;
+        if ~isempty(window)
+            timeEventsIdx = window(1) + (1:numel(info.nBins)-1)';
         else
-            timeEvents = [];
+            timeEventsIdx = (1:numel(info.nBins)-1)';
         end
     else
-        bw       = info.expectedBinWidth;
-        timeAxis = (0:nTime-1) .* bw;
-
-        if isfield(info, 'nBins') && ~isempty(info.nBins)
-            timeEvents = cumsum(info.nBins(1:end-1))' .* bw;
-        else
-            timeEvents = [];
-        end
+        timeEvents = [];
+        timeEventsIdx = [];
     end
 end
 

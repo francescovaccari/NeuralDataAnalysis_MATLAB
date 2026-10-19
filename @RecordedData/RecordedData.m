@@ -38,11 +38,13 @@ classdef RecordedData
         BinTimestampsForVariableBin = [];        % Bin center timestamps for variable-bin pipeline (neurons × conditions × trials × bins)
 
         % Fixed-bin tensors
-        TensorWithFixBinInfo = struct();           % Metadata for fixed-bin tensor
+        TensorWithFixBinInfo = struct();           % Metadata for fixed-bin tensor (incl. relativeBinCenters: time axis relative to the alignment marker)
         TensorWithFixBin = [];                     % Trial-by-trial activity (neurons × conditions × trials × time)
         TensorWithFixBinCondAvg = [];              % Condition-averaged activity (neurons × conditions × time)
-        MarkerTensorForFixBin = [];                % Marker times trial-by-trial (neurons × conditions × trials × marker)
-        MarkerTensorForFixBinCondAvg = [];         % Marker times condition averaged (neurons × conditions × marker)
+        BinnedMarkerTensorForFixBin = [];          % Bin index each marker falls into, trial-by-trial (neurons × conditions × trials × marker)
+        BinnedMarkerTensorForFixBinCondAvg = [];   % Bin index each marker falls into, condition averaged (neurons × conditions × marker)
+        AlignedMarkerTensorForFixBin = [];         % Marker timing relative to the window's alignment marker, trial-by-trial (neurons × conditions × trials × marker)
+        AlignedMarkerTensorForFixBinCondAvg = [];  % Marker timing relative to the window's alignment marker, condition averaged (neurons × conditions × marker)
         TrialNumWithFixBin = [];                   % Trial counts for fixed-bin pipeline (neurons × conditions)
         BinTimestampsForFixBin = [];             % Bin center timestamps for fixed-bin pipeline (neurons × conditions × trials × bins)
 
@@ -82,7 +84,7 @@ classdef RecordedData
         obj = splitTensorWithParams(obj, params, fixedBinFlag)
 
         %% REGRESSOR TENSOR METHODS
-        [tensorOut, infoOut] = addVariable2Tensor(obj, tensorIn, opt)
+        [tensorOut, infoOut] = addVariable2Tensor(obj, tensorIn, var, requiredTS, opt)
 
         %% DATA REFINEMENT METHODS
         obj = refineNeuralData(obj, refType, refOpt, fixedFlag)
@@ -91,6 +93,11 @@ classdef RecordedData
         plotPSTH(obj, neu2consider, conds2consider, window, bin, vars2plot, varargin)
         
         plotSDF(obj, neus2consider, conds2consider, window, binWidth, order, displayErrorFactor, varargin)
+
+        %% MARKER TIMING METHODS (fixed-bin pipeline)
+        [markerTimes, markerIdx] = computeAlignedMarkerTimes(obj, window)
+
+        plotMarkerLines(obj, window, markerNames, varargin)
 
         %% DECODING AND ANALYSIS METHODS
         decodingScores = decodeCond(obj, neus2consider, conds2consider, window)

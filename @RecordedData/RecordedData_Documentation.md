@@ -26,6 +26,9 @@ obj = obj.refineNeuralData(refType, refOpt, fixedFlag)
 % (Optional) split tensor by task parameters
 obj = obj.splitTensorWithParams(params, fixedBinFlag)
 
+% Build a regressor tensor (call iteratively)
+[tensorOut, infoOut] = obj.addVariable2Tensor(tensorIn, var, requiredTS, opt)
+
 % Visualise
 obj.plotPSTH(neu2consider, conds2consider, window, bin, vars2plot)
 obj.plotSDF(neus2consider, conds2consider, window, binWidth, order, displayErrorFactor)
@@ -236,6 +239,69 @@ Updates: `TensorWithParams`, `TensorWithParamsCondAvg`, `TrialNumWithParams`, `T
 ```matlab
 params = [conditions.Target(:), conditions.Obstacle(:)];  % 8 conds x 2 params
 obj = obj.splitTensorWithParams(params, true);
+```
+
+---
+
+### `addVariable2Tensor`
+
+Build a regressor tensor incrementally. Each call resamples one variable to a common time grid and appends it as a new slice along the last dimension. Pass `[]` as `tensorIn` on the first call.
+
+```matlab
+[tensorOut, infoOut] = obj.addVariable2Tensor(tensorIn, var, requiredTS)
+[tensorOut, infoOut] = obj.addVariable2Tensor(tensorIn, var, requiredTS, opt)
+```
+
+**`var` — variable source**
+
+| Value | Data | `opt.varTS` | `opt.timeDim` |
+|---|---|---|---|
+| `{'FR','FixBin'}` | `TensorWithFixBin` | auto → `BinTimestampsForFixBin` | auto (4) |
+| `{'FR','VariableBin'}` | `TensorWithVariableBin` | auto → `BinTimestampsForVariableBin` | auto (4) |
+| `{'TC','xCursor'}` / `{'TC','yCursor'}` | `obj.TC` (cell mode) | auto → `obj.TCTS` | auto (4) |
+| numeric tensor | user-supplied | required | required |
+| cell `{nNeu×nCond}{1×nTrial}[1×T]` | user-supplied | required | auto (4) |
+
+**`requiredTS`** — `nNeu × nCond × nTrial × nTarget` numeric tensor of target timestamps. Each slice is resampled independently via `interp1(...,'linear','extrap')`.
+
+**`opt` fields**
+
+| Field | Default | Description |
+|---|---|---|
+| `varTS` | auto (named sources) | Timestamps for `var`; numeric tensor or cell `{nNeu×nCond}{1×nTrial}[1×T]` |
+| `timeDim` | auto (4) | Time dimension in `var`; required only for numeric tensor inputs |
+| `reuseAcrossUnits` | `true` for cell-mode | See reuse rules below |
+| `unitDim` | — | Neuron dimension in a numeric tensor; required when `reuseAcrossUnits = true` |
+| `der` | `0` | Derivative order (iterated `central_diff`) |
+| `lag` | `0` | Lag in samples (+delay / −anticipate); boundary padded with mean |
+| `filter` | `[]` | Convolution kernel passed to `conv(...,'same')` |
+| `varName` | `''` | Label stored in `infoOut` |
+| `infoIn` | `struct()` | `infoOut` from the previous call; accumulates slice history |
+
+**Reuse rules (`reuseAcrossUnits`)**
+
+| `var` type | Default | `= true` | `= false` |
+|---|---|---|---|
+| FR | always `false` | **error** | ok |
+| TC / EY / KIN / cell | `true` | process neuron 1, copy to all (warns if not simultaneous) | process each neuron (warns if simultaneous) |
+| numeric tensor | `false` | requires `opt.unitDim` | process each neuron independently |
+
+**Outputs**
+- `tensorOut` — `nNeu × nCond × nTrial × nTarget × K+1`
+- `infoOut` — struct with fields `n1`, `n2`, … each recording the full settings for that slice
+
+```matlab
+% xCursor position — resampled to fixed-bin grid (simultaneous recording: shared across units)
+[T, info] = obj.addVariable2Tensor([], {'TC','xCursor'}, obj.BinTimestampsForFixBin);
+
+% yCursor velocity (first derivative) — appended as second slice
+opt.der    = 1;
+opt.infoIn = info;
+[T, info] = obj.addVariable2Tensor(T, {'TC','yCursor'}, obj.BinTimestampsForFixBin, opt);
+
+% Firing rate — each neuron processed independently (FR always ignores reuseAcrossUnits)
+opt.der    = 0;  opt.varName = 'FR';  opt.infoIn = info;
+[T, info] = obj.addVariable2Tensor(T, {'FR','FixBin'}, obj.BinTimestampsForFixBin, opt);
 ```
 
 ---

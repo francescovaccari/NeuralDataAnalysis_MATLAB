@@ -92,13 +92,11 @@ function plotSDF(obj, neus2consider, conds2consider, window, binWidth, order, di
         error('plotSDF: unknown order ''%s''. Choose ''preference'' or ''condition''.', order);
     end
 
-    % ---- Build time axis (seconds) ---------------------------------------
-    if numel(binWidth) > 1 && binWidth(2) > 0
-        timeStep = binWidth(2);
-    else
-        timeStep = binWidth(1);
-    end
-    timeAxis = window(1) + (0:nTime-1) * timeStep + binWidth(1)/2;
+    % ---- Build time axis (seconds) ----------------------------------------
+    % Uses the exact, delta-corrected bin-center axis computed by
+    % prepareTensorWithFixBin, so it is guaranteed to stay aligned with the
+    % actual bin positions (instead of re-deriving a possibly divergent axis).
+    timeAxis = tmpObj.TensorWithFixBinInfo.relativeBinCenters;
 
     % ---- Plot ------------------------------------------------------------
     figure;
@@ -122,28 +120,8 @@ function plotSDF(obj, neus2consider, conds2consider, window, binWidth, order, di
             'DisplayName', char(legendLabels(cond)));
     end
 
-    % ---- Marker lines (bin positions → time) ----------------------------
-    markerBins  = squeeze(mean(tmpObj.MarkerTensorForFixBin, [1 2 3], 'omitmissing'));
-    markerBins  = markerBins(:)';
-    markerTimes = interp1(1:nTime, timeAxis, markerBins, 'linear', NaN);
-    markerIsPlotted = isfinite(markerTimes);
-
-    if isempty(markerNames)
-        if any(markerIsPlotted)
-            xline(markerTimes(markerIsPlotted));
-        end
-    else
-        if numel(markerNames) ~= numel(markerTimes)
-            error('RecordedData:InvalidMarkerNames', ...
-                'markerNames must contain one name per marker (%d expected).', ...
-                numel(markerTimes));
-        end
-        if any(markerIsPlotted)
-            xline(markerTimes(markerIsPlotted), '-', markerNames(markerIsPlotted), ...
-                'LabelOrientation',       'aligned', ...
-                'LabelHorizontalAlignment', 'left');
-        end
-    end
+    % ---- Marker lines ------------------------------------------------------
+    tmpObj.plotMarkerLines(window, markerNames);
 
     hold off;
     legend show;

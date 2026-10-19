@@ -184,44 +184,39 @@ function anovaResults = computeAnovaOnParam(obj, neus2consider, conds2consider, 
     anovaResults.params = params;
     anovaResults.factorNames = varNames;
 
-    if binWidth(2) > 0
-        timeStep = binWidth(2);
-    else
-        timeStep = binWidth(1);
-    end
-    timeAxis = anaWindow(1) + (0:nTime-1)*timeStep;
-    markerPositions = squeeze(mean(anaObj.MarkerTensorForFixBin,[1 2 3],'omitmissing'));
-    markerPositions = markerPositions(:)';
-    markerTimes = anaWindow(1) + markerPositions*timeStep;
-    markerIsPlotted = isfinite(markerTimes) & markerTimes>=anaWindow(1) & markerTimes<=anaWindow(3);
+    % Use the exact, delta-corrected bin-center axis and aligned marker
+    % timing computed by prepareTensorWithFixBin, instead of re-deriving a
+    % (possibly divergent) axis and converting bin indices to time.
+    timeAxis = anaObj.TensorWithFixBinInfo.relativeBinCenters;
+    [markerTimes, ~] = anaObj.computeAlignedMarkerTimes(anaWindow);
 
     anovaResults.time = timeAxis;
-    anovaResults.markerTimes = markerTimes(markerIsPlotted);
+    anovaResults.markerTimes = markerTimes;
     anovaResults.withEpoch.time = timeAxis;
-    anovaResults.withEpoch.markerTimes = markerTimes(markerIsPlotted);
+    anovaResults.withEpoch.markerTimes = markerTimes;
     anovaResults.withoutEpoch.time = timeAxis;
-    anovaResults.withoutEpoch.markerTimes = markerTimes(markerIsPlotted);
+    anovaResults.withoutEpoch.markerTimes = markerTimes;
 
     neuCondStr = sprintf('neus %d-%d (n=%d) | conds [%s]', min(neus2consider), max(neus2consider), numel(neus2consider), num2str(conds2consider));
     if displayFigures
         figure
         plot(timeAxis, anovaResults.withEpoch.sign, 'LineWidth', 3)
         hold on
-        plotMarkerLines();
+        anaObj.plotMarkerLines(anaWindow, markerNames);
         ylabel("% of units modulated")
         xlabel('Time (s)')
-        title({["ANOVA with epoch | ref: " num2str(refWindow) " | ana: " num2str(anaWindow) ...
-            " | bin: " num2str(binWidth(1)) "s step: " num2str(binWidth(2)) "s"], neuCondStr})
+        title(['ANOVA with epoch | ref: ' num2str(refWindow) ' | ana: ' num2str(anaWindow) ...
+            ' | bin: ' num2str(binWidth(1)) 's step: ' num2str(binWidth(2)) 's |' neuCondStr])
         legend(effectNamesWithEpoch, 'Interpreter', 'none')
 
         figure
         plot(timeAxis, anovaResults.withoutEpoch.sign, 'LineWidth', 3)
         hold on
-        plotMarkerLines();
+        anaObj.plotMarkerLines(anaWindow, markerNames);
         ylabel("% of units modulated")
         xlabel('Time (s)')
-        title({["ANOVA without epoch | ana: " num2str(anaWindow) ...
-            " | bin: " num2str(binWidth(1)) "s step: " num2str(binWidth(2)) "s"], neuCondStr})
+        title(['ANOVA without epoch | ana: ' num2str(anaWindow) ...
+            ' | bin: ' num2str(binWidth(1)) 's step: ' num2str(binWidth(2)) 's |' neuCondStr])
         legend(effectNamesWithoutEpoch, 'Interpreter', 'none')
     end
 
@@ -280,28 +275,4 @@ function anovaResults = computeAnovaOnParam(obj, neus2consider, conds2consider, 
         end
     end
 
-    function plotMarkerLines()
-        if isempty(markerTimes) || ~any(markerIsPlotted)
-            return
-        end
-
-        plottedMarkerIdx = find(markerIsPlotted);
-        if isempty(markerNames)
-            xline(markerTimes(plottedMarkerIdx));
-            return
-        end
-
-        if numel(markerNames) == numel(markerTimes)
-            plottedMarkerNames = markerNames(plottedMarkerIdx);
-        elseif numel(markerNames) == numel(plottedMarkerIdx)
-            plottedMarkerNames = markerNames;
-        else
-            error(['markerNames must contain either one name for each marker ' ...
-                'or one name for each plotted marker.']);
-        end
-
-        xline(markerTimes(plottedMarkerIdx), '-', plottedMarkerNames, ...
-            'LabelOrientation', 'aligned', ...
-            'LabelHorizontalAlignment', 'left');
-    end
 end

@@ -13,7 +13,12 @@ function obj = prepareTensorWithFixBin(obj, window, binWidth, neus2consider, con
     %
     % DESCRIPTION:
     %   Creates binned neural activity with uniform bin widths. Supports overlapping bins
-    %   for intrinsic temporal smoothing. State markers tracked in MarkerTensorForFixBin.
+    %   for intrinsic temporal smoothing. State markers tracked in BinnedMarkerTensorForFixBin
+    %   (the bin index each marker falls into) and AlignedMarkerTensorForFixBin (the timing
+    %   of each marker relative to the window's alignment marker, i.e. markers(window(2))).
+    %   The relative bin-center time axis is exposed as
+    %   TensorWithFixBinInfo.relativeBinCenters, in the same reference frame as
+    %   AlignedMarkerTensorForFixBin, for consistent plotting downstream.
     %
     % REMARKS:
     %   - Firing rates in spikes/second
@@ -38,6 +43,12 @@ function obj = prepareTensorWithFixBin(obj, window, binWidth, neus2consider, con
     if islogical(conds2consider)
         conds2consider = find(conds2consider);
     end
+    if mod(binWidth(1),binWidth(2)) ~= 0 && binWidth(2) > 0
+        warning(['Warning: when binning the spikes, the bin width should be a multiple of the step. ' ...
+            'This is not the case: binWidth = ' num2str(binWidth(1)) ', step = ' num2str(binWidth(2)) '. '...
+            'Bin width will be automatically adapted to allow vectorized computations.'] );
+    end
+
     neus2consider = reshape(neus2consider, 1, []);
     conds2consider = reshape(conds2consider, 1, []);
 
@@ -47,15 +58,28 @@ function obj = prepareTensorWithFixBin(obj, window, binWidth, neus2consider, con
     nMaxTrial = max(cellfun(@numel, selectedCS(:)));
     nMarker = numel(MS{neus2consider(1), conds2consider(1)}{1,1});
     if binWidth(2) > 0 %partially overlapping bins
-        edges = window(1) : binWidth(2) : window(3);
+        delta = mod(window(3)-window(1),binWidth(2))/2; %to avoid misallignemnt of central marker
+        edges = window(1)+delta : binWidth(2) : window(3);
     else
-        edges = window(1) : binWidth(1) : window(3);
+        delta = mod(window(3)-window(1),binWidth(1))/2; %to avoid misallignemnt of central marker
+        edges = window(1)+delta : binWidth(1) : window(3);
     end
-
-    relativeBinCenters = (edges(1:end-1) + edges(2:end)) / 2;
+    
+    if binWidth(2) > 0
+        relativeBinCenters = ([window(1)+delta:binWidth(2):window(3)-binWidth(2)] + [window(1)+binWidth(2)+delta:binWidth(2):window(3)]) / 2;
+    else
+        relativeBinCenters = (edges(1:end-1) + edges(2:end)) / 2;
+    end
+    % Expose the bin-center time axis (relative to the window's alignment
+    % marker) so downstream plotting code (plotSDF, computeAnovaOnParam/Cond,
+    % computedPCA, neuralDecodingClassification) can reuse this exact,
+    % delta-corrected axis instead of re-deriving (and potentially
+    % misaligning) their own.
+    TensorWithFixBinInfo.relativeBinCenters = relativeBinCenters;
     TensorWithFixBin = nan(nSelectedNeu, nSelectedCond, nMaxTrial, numel(edges)-1);
     BinTimestampsForFixBin = nan(nSelectedNeu, nSelectedCond, nMaxTrial, numel(edges)-1);
-    MarkerTensorForFixBin = nan(nSelectedNeu, nSelectedCond, nMaxTrial, nMarker);
+    BinnedMarkerTensorForFixBin = nan(nSelectedNeu, nSelectedCond, nMaxTrial, nMarker);
+    AlignedMarkerTensorForFixBin = nan(nSelectedNeu, nSelectedCond, nMaxTrial, nMarker); 
     TensorWithFixBinInfo.neus2consider = neus2consider;
     TensorWithFixBinInfo.conds2consider = conds2consider;
 
@@ -72,39 +96,46 @@ function obj = prepareTensorWithFixBin(obj, window, binWidth, neus2consider, con
 
             for trial = 1:size(CS{neu, cond},2)
                 markers = MS{neu,cond}{1,trial};
-                mksAligned2WinStart = markers - (markers(window(2)) + window(1)); %align markers with the beginning of the window of interest
+                mksAligned2WinStart = markers - (markers(window(2)) + window(1)); %align markers with the beginning of the window of interest (mks with negative times will before the window of interest)
                 if binWidth(2) > 0
                     binWidth2use = binWidth(2);
                 else
                     binWidth2use = binWidth(1);
                 end
-                tmpMks = (floor(abs(mksAligned2WinStart)/ binWidth2use)+1).*sign(mksAligned2WinStart); %vectorized implementation
+                tmpMks = (floor(abs(mksAligned2WinStart)/ binWidth2use)+1).*sign(mksAligned2WinStart); %vectorized implementation for assigning a bin to every mk (even those outside interest window)
                 tmpMks(tmpMks==0) = 1; %bin number 0 have no sense
-                MarkerTensorForFixBin(neuIdx, condIdx, trial, :) = tmpMks;
+                BinnedMarkerTensorForFixBin(neuIdx, condIdx, trial, :) = tmpMks;
                 %% similar but with a for loop
                 % for m = 1:nMarker
                 %     mkAligned2WinStart = markers(m) - (markers(window(2)) + window(1));
                 %     if binWidth(2) > 0
-                %         MarkerTensorForFixBin(neuIdx, condIdx, trial, m) = round( mkAligned2WinStart / binWidth(2)); %compute the bin of the marker even if it is outside the window
+                %         BinnedMarkerTensorForFixBin(neuIdx, condIdx, trial, m) = round( mkAligned2WinStart / binWidth(2)); %compute the bin of the marker even if it is outside the window
                 %     else
-                %         MarkerTensorForFixBin(neuIdx, condIdx, trial, m) = round( mkAligned2WinStart / binWidth(1)); %compute the bin of the marker even if it is outside the window
+                %         BinnedMarkerTensorForFixBin(neuIdx, condIdx, trial, m) = round( mkAligned2WinStart / binWidth(1)); %compute the bin of the marker even if it is outside the window
                 %     end
                 % 
                 % end
-                tmp_trial = histcounts(CS{neu,cond}{1,trial}, edges+markers(window(2)))./binWidth(1); %compute Firing Rate (sp/s)
+                
                 if binWidth(2) > 0 %partially overlapping bins
-                    tmp_trial = movmean(tmp_trial,floor(binWidth(1)/binWidth(2)));
+                    tmp_trial = histcounts(CS{neu,cond}{1,trial}, edges+markers(window(2)))./binWidth(2); %compute Firing Rate (sp/s)
+                    tmp_trial = movmean(tmp_trial,[0 floor(binWidth(1)/binWidth(2))]); %1st binWidth(1)-wide bin will include n smaller bin from to 1 to n, and so on
+                else
+                    tmp_trial = histcounts(CS{neu,cond}{1,trial}, edges+markers(window(2)))./binWidth(1); %compute Firing Rate (sp/s)
                 end
                 TensorWithFixBin(neuIdx,condIdx,trial,:) = tmp_trial;
                 BinTimestampsForFixBin(neuIdx, condIdx, trial, :) = relativeBinCenters + markers(window(2));
+                AlignedMarkerTensorForFixBin(neuIdx, condIdx, trial, :) = markers - markers(window(2));
             end
         end
     end
 
     TensorWithFixBinCondAvg = reshape(mean(TensorWithFixBin,3,'omitmissing'), ...
         nSelectedNeu, nSelectedCond, numel(edges)-1);
-    MarkerTensorForFixBinCondAvg = reshape(mean(MarkerTensorForFixBin,3,'omitmissing'), ...
+    BinnedMarkerTensorForFixBinCondAvg = reshape(mean(BinnedMarkerTensorForFixBin,3,'omitmissing'), ...
         nSelectedNeu, nSelectedCond, nMarker);
+    AlignedMarkerTensorForFixBinCondAvg = reshape(mean(AlignedMarkerTensorForFixBin,3,'omitmissing'), ...
+        nSelectedNeu, nSelectedCond, nMarker);
+
     close(progressBar);
     
     % Compute trial counts: N x C (number of valid trials per neuron per condition)
@@ -113,8 +144,10 @@ function obj = prepareTensorWithFixBin(obj, window, binWidth, neus2consider, con
     % Assign results to object properties
     obj.TensorWithFixBin = TensorWithFixBin;
     obj.TensorWithFixBinCondAvg = TensorWithFixBinCondAvg;
-    obj.MarkerTensorForFixBin = MarkerTensorForFixBin;
-    obj.MarkerTensorForFixBinCondAvg = MarkerTensorForFixBinCondAvg;
+    obj.BinnedMarkerTensorForFixBin = BinnedMarkerTensorForFixBin;
+    obj.BinnedMarkerTensorForFixBinCondAvg = BinnedMarkerTensorForFixBinCondAvg;
+    obj.AlignedMarkerTensorForFixBin = AlignedMarkerTensorForFixBin;
+    obj.AlignedMarkerTensorForFixBinCondAvg = AlignedMarkerTensorForFixBinCondAvg;
     obj.TensorWithFixBinInfo = TensorWithFixBinInfo;
     obj.TrialNumWithFixBin = TrialNumWithFixBin;
     obj.BinTimestampsForFixBin = BinTimestampsForFixBin;

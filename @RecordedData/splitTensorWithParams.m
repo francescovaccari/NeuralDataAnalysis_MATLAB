@@ -58,9 +58,13 @@ function obj = splitTensorWithParams(obj, params, fixedBinFlag)
     obj.TensorWithParamsInfo.params = params;
     obj.TensorWithParamsInfo.fixedBinFlag = fixedBinFlag;
 
-    if fixedBinFlag && ~isempty(obj.MarkerTensorForFixBin)
-        obj.TensorWithParamsInfo.MarkersFixedBin = squeeze(mean(obj.MarkerTensorForFixBin,[1 2 3],'omitnan'));
-    end
+    % NOTE: fixed-bin marker/time-axis metadata (bin-index markers, aligned
+    % marker timing, relative bin centers) are intentionally NOT copied here.
+    % They live on obj.BinnedMarkerTensorForFixBin / AlignedMarkerTensorForFixBin /
+    % TensorWithFixBinInfo.relativeBinCenters, which splitTensorWithParams
+    % leaves untouched, so callers should read them directly off the
+    % trainObj/testObj (e.g. via computeAlignedMarkerTimes) rather than via
+    % TensorWithParamsInfo.
 
     if fixedBinFlag
         obj.TensorWithParamsInfo.binWidth = obj.TensorWithFixBinInfo.binWidth;

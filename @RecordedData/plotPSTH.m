@@ -4,6 +4,7 @@ function plotPSTH(obj, neu2consider, conds2consider, window, bin, vars2plot, var
     % SYNTAX:
     %   plotPSTH(obj, neu2consider, conds2consider, window, bin, vars2plot)
     %   plotPSTH(..., 'markerNames', markerNames)
+    %   plotPSTH(..., 'maxTrialsToPlot', maxTrialsToPlot)
     %
     % INPUTS:
     %   obj                 - RecordedData object                     
@@ -13,6 +14,11 @@ function plotPSTH(obj, neu2consider, conds2consider, window, bin, vars2plot, var
     %   bin                 - Bin size in seconds (numeric scalar, positive)
     %   vars2plot           - Cell array of variable names {'EY', 'TC', ...} or empty {}
     %   'markerNames'       - Cell array of marker names used for the raster marker legend
+    %   'maxTrialsToPlot'   - Max individual trials shown per condition as raster rows
+    %                         (and trial overlays). If a condition has more trials than
+    %                         this, trials are randomly subsampled for display only; mean
+    %                         firing rates always use all available trials.
+    %                         Default = Inf (plot all trials).
     %
     %
     % OUTPUT:
@@ -20,7 +26,9 @@ function plotPSTH(obj, neu2consider, conds2consider, window, bin, vars2plot, var
     %
     % DESCRIPTION:
     %   Comprehensive visualization of neural activity aligned to a specific marker.
-    %   Displays mean firing rate histogram with raster plot showing all trials.
+    %   Displays mean firing rate histogram (computed on all trials) with a raster
+    %   plot showing up to maxTrialsToPlot trials (randomly subsampled per condition
+    %   when it has more trials than that).
 
     % Validate inputs
     if ~isscalar(neu2consider) || neu2consider < 1
@@ -42,7 +50,7 @@ function plotPSTH(obj, neu2consider, conds2consider, window, bin, vars2plot, var
     if nargin < 6 || isempty(vars2plot)
         vars2plot = {};
     elseif (ischar(vars2plot) || (isstring(vars2plot) && isscalar(vars2plot))) && ...
-            strcmpi(char(vars2plot), 'markerNames')
+            any(strcmpi(char(vars2plot), {'markerNames', 'maxTrialsToPlot'}))
         varargin = [{vars2plot}, varargin];
         vars2plot = {};
     elseif ischar(vars2plot) || isstring(vars2plot)
@@ -53,7 +61,10 @@ function plotPSTH(obj, neu2consider, conds2consider, window, bin, vars2plot, var
     validMarkerNames = @(names) isempty(names) || ...
         (iscell(names) && all(cellfun(@(name) ischar(name) || ...
         (isstring(name) && isscalar(name)), names(:))));
+    validMaxTrialsToPlot = @(x) isnumeric(x) && isscalar(x) && x > 0 && ...
+        (isinf(x) || mod(x, 1) == 0);
     addParameter(p, 'markerNames', {}, validMarkerNames);
+    addParameter(p, 'maxTrialsToPlot', Inf, validMaxTrialsToPlot);
     parse(p, varargin{:});
 
     markerNames = p.Results.markerNames;
@@ -62,6 +73,8 @@ function plotPSTH(obj, neu2consider, conds2consider, window, bin, vars2plot, var
     else
         markerNames = cellfun(@char, markerNames(:)', 'UniformOutput', false);
     end
+
+    maxTrialsToPlot = p.Results.maxTrialsToPlot;
 
     % Get number of conditions
     nConds = numel(conds2consider);
@@ -200,8 +213,16 @@ function plotPSTH(obj, neu2consider, conds2consider, window, bin, vars2plot, var
             condFiringRates(trial, :) = counts / bin;
         end
         
-        % Mean firing rate
+        % Mean firing rate (always computed using all available trials)
         meanFR = mean(condFiringRates, 1, 'omitnan');
+        
+        % Randomly subsample trials for display only (raster/overlays)
+        if isfinite(maxTrialsToPlot) && nTrials > maxTrialsToPlot
+            trials2plot = sort(randperm(nTrials, maxTrialsToPlot));
+        else
+            trials2plot = 1:nTrials;
+        end
+        nTrialsPlotted = numel(trials2plot);
         
         % ===== HISTOGRAM =====
         ax_hist = subplot(totalGridRows, totalGridCols, baseGridIdx);
@@ -228,9 +249,10 @@ function plotPSTH(obj, neu2consider, conds2consider, window, bin, vars2plot, var
         ax_raster = subplot(totalGridRows, totalGridCols, baseGridIdx + totalGridCols);
         hold(ax_raster, 'on');
         
-        markerSize = max(5, min(5, 17 / sqrt(nTrials * nConds)));
+        markerSize = max(5, min(5, 17 / sqrt(nTrialsPlotted * nConds)));
         
-        for trial = 1:nTrials
+        for plotRow = 1:nTrialsPlotted
+            trial = trials2plot(plotRow);
             markers = MS{neu2consider, cond}{trial};
             spikes = CS{neu2consider, cond}{trial};
             
@@ -242,7 +264,7 @@ function plotPSTH(obj, neu2consider, conds2consider, window, bin, vars2plot, var
             validSpikes = alignedSpikes(alignedSpikes >= window(1) & alignedSpikes <= window(3));
             for s = 1:numel(validSpikes)
                 plot(ax_raster, [validSpikes(s) validSpikes(s)], ...
-                     [trial - 0.4, trial + 0.4], 'k', 'LineWidth', 1);
+                     [plotRow - 0.4, plotRow + 0.4], 'k', 'LineWidth', 1);
             end
             
             % Plot markers
@@ -250,7 +272,7 @@ function plotPSTH(obj, neu2consider, conds2consider, window, bin, vars2plot, var
                 markerTime = alignedMarkers(m);
                 if markerTime >= window(1) && markerTime <= window(3)
                     markerColor = markerColorByIdx(m, :);
-                    plot(ax_raster, markerTime, trial, 'o', ...
+                    plot(ax_raster, markerTime, plotRow, 'o', ...
                          'MarkerFaceColor', markerColor, ...
                          'MarkerEdgeColor', markerColor, ...
                          'MarkerSize', markerSize, ...
@@ -277,8 +299,12 @@ function plotPSTH(obj, neu2consider, conds2consider, window, bin, vars2plot, var
         
         ax_raster.YDir = 'reverse';
         ax_raster.XLim = [window(1), window(3)];
-        ax_raster.YLim = [0, nTrials + 1];
-        ax_raster.YLabel.String = 'Trial';
+        ax_raster.YLim = [0, nTrialsPlotted + 1];
+        if nTrialsPlotted < nTrials
+            ax_raster.YLabel.String = sprintf('Trial (%d/%d shown)', nTrialsPlotted, nTrials);
+        else
+            ax_raster.YLabel.String = 'Trial';
+        end
         ax_raster.XLabel.String = 'Time (s)';
         
         % Add grid
@@ -307,7 +333,7 @@ function plotPSTH(obj, neu2consider, conds2consider, window, bin, vars2plot, var
                 if ~isempty(varData) && iscell(varData)
                     hold(ax_var, 'on');
                     
-                    for trial = 1:nTrials
+                    for trial = trials2plot
                         markers = MS{neu2consider, cond}{trial};
                         alignmentTime = markers(window(2));
                         

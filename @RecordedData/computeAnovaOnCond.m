@@ -110,18 +110,17 @@ function anovaResults = computeAnovaOnCond(obj, neus2consider, conds2consider, r
         anovaResults.sign1way(t) = nnz(p1way(:,t)<0.05)/numel(p1way(:,t))*100;
     end
 
-    timeAxis = linspace(anaWindow(1), anaWindow(3), nTime);
-    markerPositions = squeeze(mean(anaObj.MarkerTensorForFixBin,[1 2 3],'omitmissing'));
-    markerPositions = markerPositions(:)';
-    markerTimes = anaWindow(1) + markerPositions .* ((anaWindow(3)-anaWindow(1))/nTime);
-    markerIsPlotted = isfinite(markerTimes) & markerTimes>=anaWindow(1) & markerTimes<=anaWindow(3);
+    % Use the exact, delta-corrected bin-center axis and aligned marker
+    % timing computed by prepareTensorWithFixBin, instead of re-deriving a
+    % (possibly divergent) axis and converting bin indices to time.
+    timeAxis = anaObj.TensorWithFixBinInfo.relativeBinCenters;
 
     neuCondStr = sprintf('neus %d-%d (n=%d) | conds [%s]', min(neus2consider), max(neus2consider), numel(neus2consider), num2str(conds2consider));
     if displayFigures
         figure
         plot(timeAxis, anovaResults.sign2way, 'LineWidth', 3)
         hold on
-        plotMarkerLines();
+        anaObj.plotMarkerLines(anaWindow, markerNames);
         ylabel("% of units modulated")
         xlabel('Time (s)')
         title({["2-way ANOVA | ref: " num2str(refWindow) " | ana: " num2str(anaWindow) ...
@@ -131,7 +130,7 @@ function anovaResults = computeAnovaOnCond(obj, neus2consider, conds2consider, r
         figure
         plot(timeAxis, anovaResults.sign1way, 'LineWidth', 3)
         hold on
-        plotMarkerLines();
+        anaObj.plotMarkerLines(anaWindow, markerNames);
         ylabel("% of units modulated")
         xlabel('Time (s)')
         title({["1-way ANOVA | ana: " num2str(anaWindow) ...
@@ -181,28 +180,5 @@ function anovaResults = computeAnovaOnCond(obj, neus2consider, conds2consider, r
         end
     end
 
-    function plotMarkerLines()
-        if isempty(markerTimes) || ~any(markerIsPlotted)
-            return
-        end
-
-        plottedMarkerIdx = find(markerIsPlotted);
-        if isempty(markerNames)
-            xline(markerTimes(plottedMarkerIdx));
-            return
-        end
-
-        if numel(markerNames) == numel(markerTimes)
-            plottedMarkerNames = markerNames(plottedMarkerIdx);
-        elseif numel(markerNames) == numel(plottedMarkerIdx)
-            plottedMarkerNames = markerNames;
-        else
-            error(['markerNames must contain either one name for each marker ' ...
-                'or one name for each plotted marker.']);
-        end
-
-        xline(markerTimes(plottedMarkerIdx), '-', plottedMarkerNames, ...
-            'LabelOrientation', 'aligned', ...
-            'LabelHorizontalAlignment', 'left');
     end
 end

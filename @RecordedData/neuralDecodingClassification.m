@@ -54,6 +54,8 @@ function [neuralDecodingScores, neuralDecodingData, neuralDecodingModels] = neur
 %     .display      - Metric to plot vs. time, or 'off' to suppress figures.
 %                     Must match a metricNames entry (e.g. 'accuracy').
 %                     Default: 'off'.
+%     .displayEpoch - Boolean flag indicating whether to display epoch decoding.
+%                     Default: false.
 %     .markerNames  - Cell array labelling temporal markers drawn as vertical
 %                     lines in the decoding plots.  Default: {}.
 %
@@ -153,6 +155,7 @@ if nargin < 6 || isempty(visOpt)
 end
 factorNamesIn = getOptField(visOpt, 'factorNames', {});
 displayMetric = char(string(getOptField(visOpt, 'display',     'off')));
+displayEpochDecoding = getOptField(visOpt, 'displayEpoch', false);
 markerNames   = getOptField(visOpt, 'markerNames', {});
 
 if ischar(markerNames) || isstring(markerNames)
@@ -178,8 +181,8 @@ if fixedFlag
 
     markerDataTrain = computeMarkerTimes(trainObj, trainWindow, binWidth, true);
     markerDataTest  = computeMarkerTimes(testObj,  testWindow,  binWidth, true);
-    timeAxisTrain   = makeTimeAxis(trainWindow, binWidth, metaTrain.nTime);
-    timeAxisTest    = makeTimeAxis(testWindow,  binWidth, metaTest.nTime);
+    timeAxisTrain   = trainObj.TensorWithFixBinInfo.relativeBinCenters;
+    timeAxisTest    = testObj.TensorWithFixBinInfo.relativeBinCenters;
     xLabel          = 'Time (s)';
 else
     trainObj = obj.prepareTensorWithVariableBin(trainWindow, expectedBinWidth, neus2consider, conds2consider4train);
@@ -327,8 +330,8 @@ if ~strcmpi(displayMetric, 'off')
             min(neus2consider), max(neus2consider), numel(neus2consider), ...
             trainWindow(1), trainWindow(3), testWindow(1), testWindow(3), ...
             decoderName, CVKfold);
-        plotDecodingCurves(rawResultsVal,  chanceResultsVal,  'Validation (Training Hold out)', timeAxisTrain, allFactorNames, displayMetric, metricIdx, CVKfold, markerDataTrain, markerNames, xLabel, infoStr);
-        plotDecodingCurves(rawResultsTest, chanceResultsTest, 'Test',                           timeAxisTest,  allFactorNames, displayMetric, metricIdx, CVKfold, markerDataTest,  markerNames, xLabel, infoStr);
+        plotDecodingCurves(rawResultsVal,  chanceResultsVal,  'Validation (Training Hold out)', timeAxisTrain, allFactorNames, displayMetric, metricIdx, CVKfold, markerDataTrain, markerNames, xLabel, infoStr, displayEpochDecoding);
+        plotDecodingCurves(rawResultsTest, chanceResultsTest, 'Test',                           timeAxisTest,  allFactorNames, displayMetric, metricIdx, CVKfold, markerDataTest,  markerNames, xLabel, infoStr, displayEpochDecoding);
     end
 end
 
@@ -342,7 +345,8 @@ function [X, labels, sampleInfo, meta] = tensorToRows(dataObj, window, binWidth,
 % labels format: [param1, param2, ..., epoch]   epoch is the LAST column.
 %
 % For fixed-bin tensors (fixedFlag=true):
-%   - time axis is in seconds; epoch boundaries come from MarkerTensorForFixBin.
+%   - time axis is TensorWithFixBinInfo.relativeBinCenters (seconds); epoch
+%     boundaries come from computeAlignedMarkerTimes (AlignedMarkerTensorForFixBin).
 % For variable-bin tensors (fixedFlag=false):
 %   - time axis is bin index (1:totalBins); epoch boundaries are derived from
 %     TensorWithVariableBinInfo.nBins stored by prepareTensorWithVariableBin.
@@ -359,17 +363,12 @@ function [X, labels, sampleInfo, meta] = tensorToRows(dataObj, window, binWidth,
     nParamCombinations = prod(paramDims);
 
     if fixedFlag
-        % Time axis in seconds; epoch boundaries from MarkerTensorForFixBin
-        timeAxis = makeTimeAxis(window, binWidth, nTimeLocal);
-        if ~isempty(dataObj.MarkerTensorForFixBin)
-            markerBins = squeeze(mean(dataObj.MarkerTensorForFixBin, [1 2 3], 'omitmissing'));
-            markerBins = markerBins(:)';
-            if binWidth(2) > 0, timeStep = binWidth(2); else, timeStep = binWidth(1); end
-            epochBoundaries = window(1) + markerBins * timeStep;
-            epochBoundaries = sort(epochBoundaries(isfinite(epochBoundaries)));
-        else
-            epochBoundaries = [];
-        end
+        % Time axis in seconds; epoch boundaries from AlignedMarkerTensorForFixBin.
+        % Both come from the same (relative-to-alignment-marker) reference
+        % frame, so epoch boundaries land exactly where they should relative
+        % to the bin centers used for decoding.
+        timeAxis = dataObj.TensorWithFixBinInfo.relativeBinCenters;
+        epochBoundaries = sort(dataObj.computeAlignedMarkerTimes(window));
     else
         % Time axis as bin index; epoch boundaries from nBins
         timeAxis = 1:nTimeLocal;
@@ -492,15 +491,6 @@ function yPred = predictDecoder(model, X)
     yPred = yPred(:);
 end
 
-function timeAxis = makeTimeAxis(window, binWidth, nTimeLocal)
-    if binWidth(2) > 0
-        timeStep = binWidth(2);
-    else
-        timeStep = binWidth(1);
-    end
-    timeAxis = window(1) + (0:nTimeLocal-1) * timeStep + binWidth(1)/2;
-end
-
 function pairs = struct2pairs(s)
     names = fieldnames(s);
     if isempty(names)
@@ -514,7 +504,7 @@ function pairs = struct2pairs(s)
     end
 end
 
-function plotDecodingCurves(rawResults, chanceResults, setLabel, timeAxis, factorNames, metricName, metricIdx, CVKfold, markerData, markerNames, xLabel, infoStr)
+function plotDecodingCurves(rawResults, chanceResults, setLabel, timeAxis, factorNames, metricName, metricIdx, CVKfold, markerData, markerNames, xLabel, infoStr, displayEpochDecoding)
 % Plot mean +/- std across CV folds for each factor.
 % Chance level (gray shaded area) is overlaid when chanceResults is non-empty.
 % Vertical lines mark temporal markers; labels come from markerNames.
@@ -559,6 +549,10 @@ function plotDecodingCurves(rawResults, chanceResults, setLabel, timeAxis, facto
     figure;
     colors = lines(nFactors);
     for f = 1:nFactors
+        if ~displayEpochDecoding && f == nFactors
+            continue; % Skip plotting the last factor if epoch decoding should not be displayed
+        end 
+
         % Chance level first (behind)
         if ~isempty(chanceResults)
             shaded_areas(timeAxis(:), meanChance(:,f), stdChance(:,f), ...
@@ -581,24 +575,19 @@ end
 function mt = computeMarkerTimes(dataObj, window, binWidth, fixedFlag)
 % Extract marker positions that fall within the analysis window.
 %
-% Fixed-bin: returns times in seconds aligned with makeTimeAxis output.
+% Fixed-bin: delegates to the shared computeAlignedMarkerTimes method
+%   (exact marker timing relative to the window's alignment marker, same
+%   reference frame as TensorWithFixBinInfo.relativeBinCenters).
 % Variable-bin: returns fractional bin positions (0.5-shifted) aligned with
 %   the 1:totalBins time axis produced by tensorToRows.
     if nargin < 4, fixedFlag = true; end
 
     if fixedFlag
-        if isempty(dataObj.MarkerTensorForFixBin)
-            mt.all = []; mt.plotted = []; mt.plottedIdx = [];
-            return
-        end
-        if binWidth(2) > 0, timeStep = binWidth(2); else, timeStep = binWidth(1); end
-        markerBins = squeeze(mean(dataObj.MarkerTensorForFixBin, [1 2 3], 'omitmissing'));
-        markerBins = markerBins(:)';
-        allTimes = window(1) + markerBins * timeStep;
-        mask = isfinite(allTimes) & allTimes >= window(1) & allTimes <= window(end);
-        % For fixed bin, allTimes spans all experiment markers, so find(mask)
-        % already equals the absolute experiment marker indices.
-        absPlottedIdx = find(mask);
+        [plottedTimes, plottedIdx] = dataObj.computeAlignedMarkerTimes(window);
+        mt.all        = [];  % not needed: computeAlignedMarkerTimes already filters to the window
+        mt.plotted    = plottedTimes;
+        mt.plottedIdx = plottedIdx;
+        return
     else
         % Variable bin: marker positions are cumulative bin counts stored in nBins.
         % Shift by +0.5 so that position k falls between bin k and bin k+1 on the
